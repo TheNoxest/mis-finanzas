@@ -3159,9 +3159,7 @@
     // Datos combinados de la nube: se adoptan sin marcarlos como cambios locales
     adoptState: function (s) { state = S.normalize(s); S.adopt(state); renderAll(); }
   });
-  if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-    navigator.serviceWorker.register('sw.js').catch(function () { /* sin modo sin conexión */ });
-  }
+  // El service worker se registra en index.html (antes de la app) para que se actualice aunque la app falle al arrancar
   ensureCoreCurrencies();
   if (Date.now() - (state.settings.lastRefresh || 0) > REFRESH_MS) refreshPrices(false);
   maybeAutoBackup();

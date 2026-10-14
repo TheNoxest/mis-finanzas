@@ -749,6 +749,33 @@
   <div class="tooltip" id="tooltip" role="tooltip"></div>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
+  <script>
+    // Red de seguridad: va antes que la app para funcionar aunque la app falle al arrancar.
+    (function () {
+      // Modo sin conexión: se registra aquí (no al final de app.js) para que se actualice aunque la app falle
+      if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+        navigator.serviceWorker.register('sw.js').catch(function () { /* sin modo sin conexión */ });
+      }
+      window.addEventListener('load', function () {
+        setTimeout(function () {
+          if (document.querySelector('.view.active')) return; // arrancó bien (un error posterior no bloquea la app)
+          var box = document.createElement('div');
+          box.className = 'boot-error';
+          box.innerHTML = '<b>La app no terminó de cargar.</b><p>Suele pasar justo después de una actualización. Tus datos están a salvo: ' +
+            'solo se borra la copia guardada de los archivos de la app y se descarga de nuevo.</p>' +
+            '<button type="button" class="primary">Reparar y recargar</button>';
+          box.querySelector('button').onclick = function () {
+            this.disabled = true; this.textContent = 'Reparando…';
+            var jobs = [];
+            if (window.caches) jobs.push(caches.keys().then(function (k) { return Promise.all(k.map(function (n) { return caches.delete(n); })); }));
+            if (navigator.serviceWorker) jobs.push(navigator.serviceWorker.getRegistrations().then(function (rs) { return Promise.all(rs.map(function (r) { return r.unregister(); })); }));
+            Promise.all(jobs).catch(function () {}).then(function () { location.reload(); });
+          };
+          (document.querySelector('main') || document.body).prepend(box);
+        }, 2500);
+      });
+    })();
+  </script>
   <script src="js/config.js"></script>
   <script src="js/calc.js"></script>
   <script src="js/store.js"></script>

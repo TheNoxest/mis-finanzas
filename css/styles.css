@@ -563,3 +563,7 @@ body.sheet-open { overflow: hidden; }
 .ptr.loading .ic { animation: spin 1s linear infinite; }
 main { padding-bottom: 96px; }   /* que el botón «+» no tape lo último de cada pantalla */
 @media (min-width: 820px) { main { padding-bottom: 96px; } }
+
+/* Aviso de arranque fallido (index.html) */
+.boot-error { margin: 16px 0; padding: 16px; border-radius: var(--radius); background: var(--warn-bg); color: var(--warn-ink); }
+.boot-error p { margin: 6px 0 12px; }
