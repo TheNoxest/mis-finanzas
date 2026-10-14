@@ -495,3 +495,7 @@ dialog::backdrop { background: rgba(0, 0, 0, .35); }
 .check { flex-direction: row; align-items: flex-start; gap: 8px; color: var(--ink); font-size: .85rem; }
 .check input { width: 18px; height: 18px; min-height: 0; flex: none; margin-top: 1px; accent-color: var(--accent); }
 .steps { margin: 0 0 10px; padding-left: 20px; font-size: .85rem; color: var(--ink-2); }
+/* ===== Aviso de versión anterior (archivo local) ===== */
+.legacy-banner { background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 14px; padding: 14px 16px; margin: 8px 0 14px; font-size: .9rem; }
+.legacy-banner b { display: block; font-size: 1rem; margin-bottom: 4px; }
+.legacy-banner .btn-row { margin: 10px 0 0; }
