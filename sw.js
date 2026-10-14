@@ -4,10 +4,10 @@
  * (la versión nueva se ve en la siguiente apertura). Precios, tasas y la nube
  * van siempre a la red: nunca se guardan aquí.
  * ========================================================================= */
-var CACHE = 'mis-finanzas-v2';
+var CACHE = 'mis-finanzas-v3';
 var SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/styles.css',
-  'js/config.js', 'js/calc.js', 'js/store.js', 'js/prices.js', 'js/charts.js', 'js/advisor.js', 'js/sync.js', 'js/app.js',
+  'js/config.js', 'js/calc.js', 'js/store.js', 'js/prices.js', 'js/charts.js', 'js/advisor.js', 'js/backups.js', 'js/sync.js', 'js/app.js',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'
 ];
 

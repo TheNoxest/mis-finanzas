@@ -578,6 +578,16 @@
         <p class="hint" style="margin-top:0">Usa la app en el PC y en el móvil con los mismos datos. Se cifran en tu dispositivo con una contraseña que solo tú conoces antes de subir a la nube.</p>
         <div id="sync-body"></div>
       </div>
+
+      <div class="card" id="versions-card">
+        <h2>Copias y versiones</h2>
+        <p class="hint" style="margin-top:0">La app guarda copias automáticas para que puedas volver atrás si algo sale mal: en este dispositivo
+          (las últimas 10, una cada 6 h y antes de cada cambio grande) y, con la sincronización activa, en la nube (cifradas).</p>
+        <h3>En este dispositivo</h3>
+        <ul class="list" id="local-versions"></ul>
+        <div class="btn-row"><button type="button" data-action="backup-local-now">Guardar copia ahora</button></div>
+        <div id="cloud-versions-box"></div>
+      </div>
       <div class="card">
         <h2>Moneda base y tasas de cambio</h2>
         <div class="row-between">
@@ -693,6 +703,7 @@
   <script src="js/prices.js"></script>
   <script src="js/charts.js"></script>
   <script src="js/advisor.js"></script>
+  <script src="js/backups.js"></script>
   <script src="js/sync.js"></script>
   <script src="js/app.js"></script>
 </body>

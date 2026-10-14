@@ -201,6 +201,7 @@
         else if (localAtStart !== mergedJson) app.adoptState(merged);
         if (cfg.adoptRemoteOnce) { delete cfg.adoptRemoteOnce; writeCfg(cfg); }
         cfg.lastSync = Date.now(); delete cfg.pending; writeCfg(cfg);
+        await autoCloudVersion(cfg, key, merged); // nunca hace fallar la sincronización
         setStatus('ok', { at: cfg.lastSync });
         return;
       }
@@ -217,6 +218,87 @@
   function schedule(ms) {
     clearTimeout(timer);
     timer = setTimeout(syncNow, ms == null ? 3000 : ms);
+  }
+
+  // ---------------------------------------------------------------- versiones en la nube
+  // Tabla `vault_versions` (supabase/versions.sql): copias cifradas igual que la bóveda.
+  // Una automática cada 6 h como máximo; retención = 20 recientes + 1 por día de los últimos 30 días.
+  var VERSION_EVERY = 6 * 3600 * 1000;
+  function versionsMissing(e) {
+    return !!e && (e.status === 404 || /vault_versions|42P01|does not exist|schema cache/i.test(e.message || ''));
+  }
+  async function pruneCloudVersions(cfg) {
+    var rows = await call(cfg, '/rest/v1/vault_versions?select=id,created_at&user_id=eq.' + cfg.session.user.id + '&order=created_at.desc');
+    var drop = root.Backups.pruneCloud((rows || []).map(function (r) { return { id: r.id, at: Date.parse(r.created_at) }; }), Date.now());
+    if (drop.length) await call(cfg, '/rest/v1/vault_versions?id=in.(' + drop.join(',') + ')', { method: 'DELETE' });
+  }
+  async function saveCloudVersion(cfg, key, state, reason) {
+    var enc = await encrypt(state, key);
+    await call(cfg, '/rest/v1/vault_versions', { method: 'POST', headers: { Prefer: 'return=minimal' },
+      body: { user_id: cfg.session.user.id, reason: reason, iv: enc.iv, data: enc.data } });
+    cfg.lastVersionAt = Date.now(); delete cfg.versionsMissing; writeCfg(cfg);
+    await pruneCloudVersions(cfg);
+  }
+  async function autoCloudVersion(cfg, key, state) {
+    if (cfg.versionsMissing && Date.now() - cfg.versionsMissing < 3600000) return; // tabla aún no creada: reintentar en 1 h
+    if (!root.Backups || !root.Backups.isDue(cfg.lastVersionAt, Date.now(), VERSION_EVERY)) return;
+    try { await saveCloudVersion(cfg, key, state, 'automática'); }
+    catch (e) { if (versionsMissing(e)) { cfg.versionsMissing = Date.now(); writeCfg(cfg); } }
+  }
+  /** Lista de versiones (sin datos). Lanza un error con `.missing = true` si falta la tabla. */
+  async function listCloudVersions() {
+    var cfg = readCfg(); await ensureSession(cfg);
+    try {
+      var rows = await call(cfg, '/rest/v1/vault_versions?select=id,created_at,reason&user_id=eq.' + cfg.session.user.id + '&order=created_at.desc');
+      return (rows || []).map(function (r) { return { id: r.id, at: Date.parse(r.created_at), reason: r.reason }; });
+    } catch (e) { if (versionsMissing(e)) e.missing = true; throw e; }
+  }
+  /** Descarga y descifra una versión. */
+  async function getCloudVersion(id) {
+    var cfg = readCfg(); await ensureSession(cfg);
+    var key = await keyGet();
+    if (!key) throw new Error('Falta la contraseña de cifrado en este dispositivo');
+    var rows = await call(cfg, '/rest/v1/vault_versions?select=*&id=eq.' + encodeURIComponent(id));
+    if (!rows || !rows[0]) throw new Error('Esa versión ya no existe');
+    return decrypt(rows[0], key);
+  }
+  /** Guarda ya una versión en la nube con los datos actuales. */
+  async function saveVersionNow(reason) {
+    var cfg = readCfg(); await ensureSession(cfg);
+    var key = await keyGet();
+    if (!key) throw new Error('Falta la contraseña de cifrado en este dispositivo');
+    try { await saveCloudVersion(cfg, key, app.getState(), reason || 'manual'); }
+    catch (e) { if (versionsMissing(e)) e.missing = true; throw e; }
+  }
+
+  // ---------------------------------------------------------------- recuperar contraseña y enlaces del correo
+  /** Envía el correo para restablecer la contraseña de la CUENTA (no la de cifrado). */
+  async function recover(email) {
+    var cfg = readCfg();
+    var back = (root.APP_CONFIG && root.APP_CONFIG.publicUrl) || (location.origin + location.pathname);
+    await call(cfg, '/auth/v1/recover?redirect_to=' + encodeURIComponent(back), { method: 'POST', auth: false, body: { email: email } });
+  }
+  /** ¿La dirección trae un enlace del correo de Supabase? (#access_token=…&type=… o #error=…) */
+  function hasAuthRedirect() { return /(^|[#&])(access_token|error_description)=/.test(location.hash); }
+  /**
+   * Procesa el enlace del correo: confirma la cuenta o abre la sesión para cambiar la contraseña.
+   * Devuelve { type: 'signup' | 'recovery' | 'magiclink' | 'error', message? } o null.
+   */
+  async function handleAuthRedirect() {
+    if (!hasAuthRedirect()) return null;
+    var p = new URLSearchParams(location.hash.slice(1));
+    history.replaceState(null, '', location.pathname + location.search + '#ajustes'); // no dejar el token en la barra
+    if (p.get('error_description')) return { type: 'error', message: p.get('error_description').replace(/\+/g, ' ') };
+    var cfg = readCfg();
+    var tok = { access_token: p.get('access_token'), refresh_token: p.get('refresh_token'), expires_in: Number(p.get('expires_in')) || 3600 };
+    var user = await call(Object.assign({}, cfg, { session: { access_token: tok.access_token } }), '/auth/v1/user');
+    saveSession(cfg, Object.assign(tok, { user: user }));
+    return { type: p.get('type') || 'signup' };
+  }
+  /** Cambia la contraseña de la cuenta (tras el enlace de recuperación o con la sesión abierta). */
+  async function updatePassword(password) {
+    var cfg = readCfg(); await ensureSession(cfg);
+    await call(cfg, '/auth/v1/user', { method: 'PUT', body: { password: password } });
   }
 
   // ---------------------------------------------------------------- configuración (pasos de la interfaz)
@@ -293,6 +375,8 @@
   root.Sync = {
     init: init, configure: configure, signUp: signUp, signIn: signIn, signOut: signOut, vaultExists: vaultExists,
     enable: enable, syncNow: syncNow, merge: merge, isPristine: isPristine,
+    listCloudVersions: listCloudVersions, getCloudVersion: getCloudVersion, saveVersionNow: saveVersionNow,
+    recover: recover, hasAuthRedirect: hasAuthRedirect, handleAuthRedirect: handleAuthRedirect, updatePassword: updatePassword,
     config: readCfg, status: function () { return status; }, onStatus: function (f) { listeners.push(f); },
     // expuestos para pruebas
     _crypto: { deriveKey: deriveKey, encrypt: encrypt, decrypt: decrypt }

@@ -131,7 +131,27 @@
   }
   function thisMonth() { return S.today().slice(0, 7); }
 
-  function persist() { S.save(state); renderAll(); }
+  function persist() { S.save(state); renderAll(); maybeAutoBackup(); }
+  var lastAutoCheck = 0;
+  function maybeAutoBackup() {
+    if (!window.Backups || Date.now() - lastAutoCheck < 600000) return;
+    lastAutoCheck = Date.now();
+    Backups.auto(state).then(renderVersionsCard);
+  }
+  /** Copia preventiva antes de un cambio grande (no bloquea si IndexedDB no está disponible). */
+  function safetyBackup(reason) {
+    if (!window.Backups) return Promise.resolve();
+    return Backups.save(state, reason).catch(function () { /* sin IndexedDB */ });
+  }
+  /** Reemplaza todos los datos por otros (restauración): copia previa, marca todo como reciente y guarda. */
+  async function replaceState(newState, reason, msg) {
+    await safetyBackup('antes de ' + reason);
+    state = S.touchAll(S.normalize(newState));
+    resetTxForm(); resetInvForm(); resetAccForm();
+    persist();
+    toast(msg);
+    if (Sync.config().enabled) Sync.syncNow();
+  }
 
   // ================================================================ navegación
   var VIEWS = ['inicio', 'movimientos', 'cuentas', 'inversiones', 'analisis', 'consejos', 'ajustes', 'cuenta'];
@@ -154,6 +174,7 @@
     $('#settings-btn').classList.toggle('active', name === 'ajustes');
     Charts.hideTip();
     if (name === 'analisis') setTimeout(renderAnalysis, 0); // necesita el ancho visible
+    if (name === 'ajustes') { cloudVersions = null; renderVersionsCard(); }
     if (name === 'cuentas') setAccTab(accTab);
     var h = '#' + name + (name === 'cuentas' && accTab !== 'cuentas' ? '/' + accTab : '');
     if (location.hash !== h) history.replaceState(null, '', h);
@@ -877,7 +898,8 @@
   }
 
   /** Datos de ejemplo: 6 meses de historia. El mes actual coincide con tests/index.html. */
-  function loadSample() {
+  async function loadSample() {
+    await safetyBackup('antes de cargar datos de ejemplo');
     if ((state.transactions.length || state.investments.length) &&
         !confirm('Esto reemplazará tus datos actuales por datos de ejemplo. ¿Continuar?')) return;
     var s = S.defaults();
@@ -954,7 +976,7 @@
       try {
         var data = S.normalize(JSON.parse(reader.result));
         if (!confirm('Se reemplazarán tus datos por los de la copia (' + data.accounts.length + ' cuentas, ' + data.transactions.length + ' movimientos, ' + data.investments.length + ' operaciones). ¿Continuar?')) return;
-        state = data; persist(); toast('Copia restaurada');
+        replaceState(data, 'restaurar una copia', 'Copia restaurada');
       } catch (e) { alert('El archivo no es una copia válida: ' + e.message); }
     };
     reader.readAsText(file);
@@ -1309,7 +1331,7 @@
     var days = last ? Math.floor((Date.now() - last) / 86400000) : null;
     var show = count >= 5 && (days === null || days >= 30);
     $('#backup-reminder').innerHTML = show
-      ? '<div class="warning reminder"><span>' + (days === null ? 'Aún no has hecho una copia de seguridad de tus datos.' : 'Hace ' + days + ' días que no haces una copia de seguridad.') +
+      ? '<div class="warning reminder"><span>' + (days === null ? 'Aún no has descargado una copia de seguridad (archivo fuera del dispositivo).' : 'Hace ' + days + ' días que no descargas una copia de seguridad (archivo fuera del dispositivo).') +
         '</span><button type="button" data-action="backup">Hacer copia ahora</button></div>' : '';
   }
 
@@ -2346,10 +2368,19 @@
     $('#settings-btn').title = cfg.enabled ? 'Ajustes · ' + (t[st.state] || '') : 'Ajustes';
   }
 
+  var recoveryMode = false;   // se abrió el enlace «restablecer contraseña» del correo
   function renderSyncCard() {
     var cfg = Sync.config(), st = Sync.status(), body = $('#sync-body');
     if (!body) return;
     renderSyncDot();
+    if (recoveryMode && cfg.session) {
+      body.innerHTML = '<div class="recovery-box"><b>Elige una contraseña nueva para tu cuenta</b>' +
+        '<form class="sync-form" data-sync-form="newpass" style="margin-top:8px"><label>Contraseña nueva (mín. 6 caracteres)<input name="pass" type="password" autocomplete="new-password" minlength="6" required></label>' +
+        '<label>Repítela<input name="pass2" type="password" autocomplete="new-password" required></label>' +
+        '<div class="actions" style="margin-top:0"><button class="primary" type="submit">Guardar contraseña</button></div></form>' +
+        '<p class="hint">Esto cambia la contraseña de la <b>cuenta</b>. Tu contraseña de <b>cifrado</b> no cambia y sigue sin poder recuperarse.</p></div>';
+      return;
+    }
     var https = location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
     if (!https) {
       body.innerHTML = '<p class="warning">La sincronización funciona cuando la app está publicada en internet (https). Sigue la guía GUIA-MOVIL.md para publicarla en GitHub Pages; luego ábrela desde ese enlace en el PC y en el móvil.</p>';
@@ -2367,7 +2398,8 @@
         '<form class="sync-form" data-sync-form="auth"><label>Correo<input name="email" type="email" autocomplete="username" required></label>' +
         '<label>Contraseña de la cuenta<input name="password" type="password" autocomplete="current-password" minlength="6" required></label>' +
         '<div class="actions" style="margin-top:0"><button type="submit" value="signup">Crear cuenta</button><button class="primary" type="submit" value="signin">Iniciar sesión</button></div></form>' +
-        '<button type="button" class="link small" data-action="sync-reset-config">Cambiar proyecto de Supabase</button>';
+        '<div class="btn-row" style="margin-top:8px"><button type="button" class="link small" data-action="sync-forgot">¿Olvidaste la contraseña de la cuenta?</button>' +
+        '<button type="button" class="link small" data-action="sync-reset-config">Cambiar proyecto de Supabase</button></div>';
       return;
     }
     if (!cfg.enabled) {
@@ -2417,10 +2449,16 @@
           if (!r.session) { toast('Cuenta creada. Confirma el correo que te envió Supabase y luego inicia sesión.'); busy(false); return; }
         } else await Sync.signIn(f.email.value.trim(), f.password.value);
         syncStep = null;
+      } else if (kind === 'newpass') {
+        if (f.pass.value !== f.pass2.value) throw new Error('Las contraseñas no coinciden');
+        await Sync.updatePassword(f.pass.value);
+        recoveryMode = false; syncStep = null;
+        toast('Contraseña de la cuenta actualizada');
       } else if (kind === 'enable') {
         if (f.pass2 && f.pass.value !== f.pass2.value) throw new Error('Las contraseñas de cifrado no coinciden');
         var mode = f.querySelector('input[name="mode"]:checked');
         toast('Cifrando y sincronizando…');
+        await safetyBackup('antes de conectar con la nube');
         await Sync.enable(f.pass.value, mode ? mode.value : 'merge');
         toast('¡Sincronización activada en este dispositivo!');
         syncStep = null;
@@ -2428,6 +2466,58 @@
     } catch (err) { toast(err.message); }
     busy(false);
     renderSyncCard();
+  }
+
+  // ================================================================ copias y versiones
+  var cloudVersions = null;   // lista cargada al pulsar «Ver versiones en la nube»
+
+  function countsText(c) {
+    if (!c) return '';
+    return [c.accounts + ' cuentas', c.transactions + ' movimientos', c.investments + ' inversiones',
+      (c.debts || 0) + (c.exchanges || 0) ? (c.debts || 0) + ' por cobrar/pagar · ' + (c.exchanges || 0) + ' cambios' : ''].filter(Boolean).join(' · ');
+  }
+  function fmtStamp(ms) {
+    return new Date(ms).toLocaleString(LOCALE, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  }
+
+  function renderVersionsCard() {
+    var box = $('#local-versions'); if (!box || !window.Backups) return;
+    Backups.list().then(function (list) {
+      box.innerHTML = list.length ? list.map(function (v) {
+        return '<li class="version-row"><span class="avatar">' + icon('i-refresh') + '</span><div class="main"><div class="title">' + esc(fmtStamp(v.at)) +
+          ' <span class="tag">' + esc(v.reason) + '</span></div><div class="sub">' + esc(countsText(v.counts)) + '</div></div>' +
+          '<button type="button" data-restore-local="' + v.id + '">Restaurar</button></li>';
+      }).join('') : '<li class="empty">Todavía no hay copias: se creará una automáticamente.</li>';
+    }).catch(function () { box.innerHTML = '<li class="empty">Este navegador no permite guardar copias (¿modo incógnito?).</li>'; });
+
+    var cb = $('#cloud-versions-box'), cfg = Sync.config();
+    if (!cfg.enabled) { cb.innerHTML = '<h3>En la nube</h3><p class="hint">Activa la sincronización para guardar versiones cifradas en la nube.</p>'; return; }
+    var html = '<h3>En la nube (cifradas)</h3>';
+    if (cloudVersions === null) {
+      html += '<div class="btn-row"><button type="button" data-action="cloud-versions">Ver versiones en la nube</button>' +
+        '<button type="button" data-action="cloud-version-now">Guardar versión en la nube ahora</button></div>';
+    } else if (cloudVersions.missing) {
+      html += '<div class="warning">Falta crear la tabla de versiones en Supabase: abre <b>SQL Editor</b>, pega el contenido de ' +
+        '<b>supabase/versions.sql</b> y pulsa <b>Run</b>. Luego vuelve a intentarlo.</div><button type="button" data-action="cloud-versions">Reintentar</button>';
+    } else {
+      html += '<ul class="list">' + (cloudVersions.length ? cloudVersions.map(function (v) {
+        return '<li class="version-row"><span class="avatar tr">' + icon('i-wallet') + '</span><div class="main"><div class="title">' + esc(fmtStamp(v.at)) +
+          ' <span class="tag">' + esc(v.reason || '') + '</span></div></div><button type="button" data-restore-cloud="' + v.id + '">Restaurar</button></li>';
+      }).join('') : '<li class="empty">Aún no hay versiones: se guarda una automáticamente cada 6 h al sincronizar.</li>') + '</ul>' +
+        '<div class="btn-row"><button type="button" data-action="cloud-version-now">Guardar versión en la nube ahora</button></div>' +
+        '<p class="hint">Se conservan las 20 más recientes y una por día del último mes.</p>';
+    }
+    cb.innerHTML = html;
+  }
+
+  async function restoreFrom(kind, id) {
+    try {
+      var data = kind === 'local' ? await Backups.get(id) : await Sync.getCloudVersion(id);
+      if (!data) { toast('Esa copia ya no existe'); return; }
+      var c = Backups.summarize(data);
+      if (!confirm('¿Volver a esta versión?\n\n' + countsText(c) + '\n\nAntes se guarda una copia de cómo está todo ahora, por si quieres deshacerlo.')) return;
+      await replaceState(data, 'restaurar una versión', 'Versión restaurada');
+    } catch (e) { toast(e.message); }
   }
 
   // ================================================================ render
@@ -2447,6 +2537,7 @@
     renderThirdParty();
     renderAccountView();
     renderSyncCard();
+    if ($('#view-ajustes').classList.contains('active')) renderVersionsCard();
   }
 
   // ================================================================ eventos
@@ -2669,6 +2760,22 @@
       }
       else if (d.action === 'csv-debts') exportDebtsCSV();
       else if (d.action === 'sync-now') Sync.syncNow();
+      else if (d.action === 'backup-local-now') safetyBackup('manual').then(function () { renderVersionsCard(); toast('Copia guardada en este dispositivo'); });
+      else if (d.restoreLocal) restoreFrom('local', d.restoreLocal);
+      else if (d.restoreCloud) restoreFrom('cloud', d.restoreCloud);
+      else if (d.action === 'cloud-versions') {
+        Sync.listCloudVersions().then(function (l) { cloudVersions = l; renderVersionsCard(); })
+          .catch(function (e) { if (e.missing) { cloudVersions = { missing: true }; renderVersionsCard(); } else toast(e.message); });
+      } else if (d.action === 'cloud-version-now') {
+        Sync.saveVersionNow('manual').then(function () { toast('Versión guardada en la nube'); return Sync.listCloudVersions(); })
+          .then(function (l) { cloudVersions = l; renderVersionsCard(); })
+          .catch(function (e) { if (e.missing) { cloudVersions = { missing: true }; renderVersionsCard(); } else toast(e.message); });
+      } else if (d.action === 'sync-forgot') {
+        var em = ($('#sync-body input[name="email"]') || {}).value;
+        if (!em || em.indexOf('@') === -1) { toast('Escribe primero tu correo arriba'); return; }
+        Sync.recover(em.trim()).then(function () { toast('Te enviamos un correo para elegir una contraseña nueva. Ábrelo en este dispositivo.'); })
+          .catch(function (e) { toast(e.message); });
+      }
       else if (d.action === 'sync-retry') { syncStep = null; renderSyncCard(); }
       else if (d.action === 'sync-reset-config') { Sync.configure('', ''); renderSyncCard(); }
       else if (d.action === 'sync-signout') {
@@ -2737,7 +2844,9 @@
       else if (d.action === 'sample') { loadSample(); refreshPrices(false); }
       else if (d.action === 'reset') {
         if (confirm('¿Borrar TODOS los datos? Esta acción no se puede deshacer. Te recomendamos exportar una copia antes.')) {
-          S.clear(); state = S.defaults(); resetTxForm(); resetInvForm(); resetAccForm(); persist(); toast('Datos borrados');
+          safetyBackup('antes de borrar todo').then(function () {
+            S.clear(); state = S.defaults(); resetTxForm(); resetInvForm(); resetAccForm(); persist(); toast('Datos borrados');
+          });
         }
       }
     });
@@ -2807,7 +2916,8 @@
   renderAll();
   if (!state.investments.length) $('#inv-details').open = true;
   var receiveMode = location.hash === '#recibir' && !!window.opener;   // abierta por la versión anterior para recibir datos
-  showView(receiveMode ? 'inicio' : (location.hash.slice(1) || 'inicio'));
+  var authLink = Sync.hasAuthRedirect();                                  // enlace del correo de Supabase
+  showView(receiveMode ? 'inicio' : authLink ? 'ajustes' : (location.hash.slice(1) || 'inicio'));
   recordSnapshot();
   S.save(state); // guarda la migración si la hubo
   Sync.onStatus(function (st) { renderSyncDot(); if ($('#view-ajustes').classList.contains('active')) renderSyncCard(); });
@@ -2821,6 +2931,16 @@
   }
   ensureCoreCurrencies();
   if (Date.now() - (state.settings.lastRefresh || 0) > REFRESH_MS) refreshPrices(false);
+  maybeAutoBackup();
+  if (authLink) {
+    Sync.handleAuthRedirect().then(function (r) {
+      if (!r) return;
+      if (r.type === 'error') toast('El enlace no es válido o caducó: ' + r.message);
+      else if (r.type === 'recovery') { recoveryMode = true; toast('Elige tu contraseña nueva'); }
+      else { syncStep = null; toast('Correo confirmado: sesión iniciada'); }
+      showView('ajustes'); renderSyncCard();
+    }).catch(function (e) { toast('No se pudo abrir la sesión: ' + e.message); });
+  }
 
   // ================================================================ pasar datos desde la versión anterior
   // La versión anterior (abierta como archivo en el PC) no puede sincronizar. Con un botón abre la
@@ -2868,6 +2988,7 @@
                   : 'Esta app ya tiene datos: se COMBINARÁN (no se borra nada). ¿Continuar?'));
       if (!ok) { opener.postMessage({ type: 'mf-cancel' }, '*'); return; }
       // Instalación vacía: se reemplaza (como «Restaurar copia»); con datos: se combinan registro por registro
+      safetyBackup('antes de recibir datos de la versión anterior');
       state = pristine ? incoming : S.normalize(Sync.merge(state, incoming));
       resetTxForm(); resetInvForm(); resetAccForm();
       persist();

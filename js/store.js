@@ -155,6 +155,20 @@
     return cur;
   }
 
+  /**
+   * Marca TODO el estado como recién cambiado. Se usa al restaurar una copia o una versión anterior:
+   * sin esto, los registros restaurados conservarían su marca vieja y la sincronización los
+   * reemplazaría por los de la nube (más recientes), deshaciendo la restauración.
+   */
+  function touchAll(state, now) {
+    now = now || Date.now();
+    COLLECTIONS.forEach(function (k) { (state[k] || []).forEach(function (r) { r._u = now; }); });
+    SINGLES.forEach(function (k) { if (state[k]) state[k]._u = now; });
+    // Lo que existe en la copia restaurada vuelve a estar vivo aunque se hubiera borrado después
+    COLLECTIONS.forEach(function (k) { (state[k] || []).forEach(function (r) { if (state.deleted) delete state.deleted[r.id]; }); });
+    return state;
+  }
+
   /** Toma `state` como referencia sin marcar cambios (al cargar o al recibir datos sincronizados). */
   function adopt(state) {
     baseline = stamp(state, null);
@@ -225,7 +239,7 @@
 
   root.Store = {
     KEY: KEY, ACCOUNT_KINDS: ACCOUNT_KINDS, COLLECTIONS: COLLECTIONS, uid: uid, today: today, defaults: defaults,
-    normalize: normalize, load: load, save: save, adopt: adopt, stamp: stamp, clear: clear, toCSV: toCSV, download: download,
+    normalize: normalize, load: load, save: save, adopt: adopt, stamp: stamp, touchAll: touchAll, clear: clear, toCSV: toCSV, download: download,
     onSave: null   // la sincronización se engancha aquí
   };
 })(this);

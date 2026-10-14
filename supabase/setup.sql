@@ -31,3 +31,29 @@ create policy "vaults: borrar la propia"     on public.vaults for delete using (
 -- Nadie sin sesión puede tocar la tabla
 revoke all on public.vaults from anon;
 grant select, insert, update, delete on public.vaults to authenticated;
+
+-- Versiones de los datos (añadido el 2026-10-14; también disponible por separado en supabase/versions.sql)
+create table if not exists public.vault_versions (
+  id         bigint generated always as identity primary key,
+  user_id    uuid        not null default auth.uid() references auth.users (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  reason     text,                                -- «automática», «manual», «antes de restaurar»…
+  iv         text        not null,
+  data       text        not null                 -- datos cifrados (AES-GCM 256)
+);
+
+create index if not exists vault_versions_user_fecha on public.vault_versions (user_id, created_at desc);
+
+alter table public.vault_versions enable row level security;
+
+drop policy if exists "versiones: leer las propias"  on public.vault_versions;
+drop policy if exists "versiones: crear las propias" on public.vault_versions;
+drop policy if exists "versiones: borrar las propias" on public.vault_versions;
+
+create policy "versiones: leer las propias"   on public.vault_versions for select using (auth.uid() = user_id);
+create policy "versiones: crear las propias"  on public.vault_versions for insert with check (auth.uid() = user_id);
+create policy "versiones: borrar las propias" on public.vault_versions for delete using (auth.uid() = user_id);
+-- Sin política de actualización: una versión guardada no se modifica.
+
+revoke all on public.vault_versions from anon;
+grant select, insert, delete on public.vault_versions to authenticated;

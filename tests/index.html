@@ -19,6 +19,7 @@
   <script src="../js/calc.js"></script>
   <script src="../js/store.js"></script>
   <script src="../js/advisor.js"></script>
+  <script src="../js/backups.js"></script>
   <script src="../js/sync.js"></script>
   <script>
   (function () {
@@ -355,6 +356,35 @@
     eq('Precios: el más reciente por activo', M.prices['cripto|BTC'].price, 2);
     eq('Combinar es estable: combinar el resultado con lo remoto no cambia nada', JSON.stringify(Sync.merge(M, R).transactions), JSON.stringify(M.transactions));
     eq('Un dispositivo recién instalado se detecta como «sin datos»', [Sync.isPristine(Store.defaults()), Sync.isPristine(L)], [true, false]);
+
+    section('Copias y versiones (Sprint 0)');
+    var B = window.Backups, H = 3600000, D = 86400000, T0 = Date.parse('2026-10-14T12:00:00Z');
+    var loc = []; for (var li = 1; li <= 13; li++) loc.push({ id: li, at: T0 - li * H });
+    eq('Locales: con 13 copias se borran las 3 más antiguas', B.pruneLocal(loc).sort(function (a, b) { return a - b; }), [11, 12, 13]);
+    eq('Locales: con 10 o menos no se borra nada', B.pruneLocal(loc.slice(0, 10)), []);
+    eq('Copia automática: toca a las 6 h, no antes', [B.isDue(T0 - 5 * H, T0), B.isDue(T0 - 6 * H, T0), B.isDue(null, T0)], [false, true, true]);
+    // Nube: 4 versiones por día durante 40 días = 160 → se quedan 20 recientes + 1 por día de los últimos 30 días
+    var cl = []; for (var dd = 0; dd < 40; dd++) for (var hh = 0; hh < 4; hh++) cl.push({ id: dd * 4 + hh, at: T0 - dd * D - hh * 6 * H });
+    var dropC = B.pruneCloud(cl, T0), keptC = cl.filter(function (v) { return dropC.indexOf(v.id) === -1; });
+    eq('Nube: se conservan las 20 más recientes', cl.slice(0, 20).every(function (v) { return dropC.indexOf(v.id) === -1; }), true);
+    var daysKept = {}; keptC.forEach(function (v) { if (v.at >= T0 - 30 * D) daysKept[new Date(v.at).toISOString().slice(0, 10)] = 1; });
+    eq('Nube: al menos una por cada día de los últimos 30', Object.keys(daysKept).length >= 30, true);
+    eq('Nube: lo más viejo de 30 días y fuera de las 20 se borra', keptC.every(function (v) { return v.at >= T0 - 31 * D; }), true);
+    eq('Nube: total conservado razonable (≤ 20 + 31)', keptC.length <= 51 && keptC.length >= 30, true);
+
+    // Restaurar una versión vieja debe ganar a lo que hay en la nube (si no, la sincronización la deshacía)
+    var nowR = Date.now();
+    var oldV = { accounts: [], categories: [], methods: [], investments: [], debts: [], exchanges: [], settings: { _u: 5 }, profile: null,
+      transactions: [{ id: 'r1', amount: 100, _u: nowR - 5000 }], deleted: {} };
+    var cloudNow = { accounts: [], categories: [], methods: [], investments: [], debts: [], exchanges: [], settings: { _u: 6 }, profile: null,
+      transactions: [{ id: 'r1', amount: 999, _u: nowR - 1000 }, { id: 'r2', amount: 7, _u: nowR - 1000 }], deleted: {} };
+    var restored = Store.touchAll(JSON.parse(JSON.stringify(oldV)), nowR);
+    var afterSync = Sync.merge(restored, cloudNow);
+    eq('Sin marcar, la nube ganaba (999)', Sync.merge(oldV, cloudNow).transactions[0].amount, 999);
+    eq('Con touchAll, la versión restaurada gana (100)', afterSync.transactions.filter(function (t) { return t.id === 'r1'; })[0].amount, 100);
+    eq('touchAll revive registros que estaban borrados', Store.touchAll({ transactions: [{ id: 'x' }], deleted: { x: 1 } }, 5).deleted, {});
+    eq('Resumen de una versión', B.summarize({ accounts: [1, 2], transactions: [1], investments: [], debts: [1], exchanges: [] }),
+      { accounts: 2, transactions: 1, investments: 0, debts: 1, exchanges: 0 });
 
     section('Migración de datos v1 → v2');
     var v1 = { version: 1, settings: { baseCurrency: 'USD', rates: { USD: 1, EUR: 1.1 } }, categories: [], methods: [],
