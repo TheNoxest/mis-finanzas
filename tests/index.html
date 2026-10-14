@@ -426,6 +426,33 @@
     eq('La comisión aparece como gasto de 5 USD en «Comisiones de transferencia»', trFlows.map(function (t) { return [t.type, t.amount, t.currency]; }), [['egreso', 5, 'USD']]);
     eq('Gastos del periodo = 5 (la transferencia en sí no es gasto)', C.summarizeTransactions(C.flowTransactions(trs), trs.settings.rates).expense, 5);
 
+    section('Cambios pendientes: cobrar o entregar después (también por partes)');
+    // x1: entregas 90 EUR desde E el 1/10 y el cliente te paga 100 USD después: 40 el 5/10 (a U) y 60 el 8/10 (a U2)
+    // x2: recibes 50 USD en U el 2/10 y entregas 45 EUR desde E el 4/10
+    var px1 = { id: 'x1', date: '2026-10-01', status: 'pendiente_cobro', client: 'Ana', received: 100, inCurrency: 'USD', delivered: 90, outCurrency: 'EUR',
+      commissionAmount: 0, inAccountId: 'U', outAccountId: 'E', costs: [], snapshot: { base: 'USD', rates: { USD: 1, EUR: 1.1 } } };
+    eq('Sin cobros: falta cobrar 100 USD (pendiente)', C.exchangeSettlement(px1), { side: 'in', currency: 'USD', total: 100, paid: 0, pending: 100, status: 'pendiente' });
+    px1.settlements = [{ id: 's1', date: '2026-10-05', amount: 40, accountId: 'U' }];
+    eq('Cobro de 40: falta 100 − 40 = 60 (parcial)', [C.exchangeSettlement(px1).pending, C.exchangeSettlement(px1).status], [60, 'parcial']);
+    px1.settlements.push({ id: 's2', date: '2026-10-08', amount: 60, accountId: 'U2' }); px1.status = 'completada'; px1.settleSide = 'in';
+    eq('Cobro de 60 más: 40 + 60 = 100 → saldado aunque el estado ya sea «completada»', [C.exchangeSettlement(px1).status, C.exchangeSettlement(px1).pending], ['pagada', 0]);
+    var px2 = { id: 'x2', date: '2026-10-02', status: 'completada', settleSide: 'out', client: 'Luis', received: 50, inCurrency: 'USD', delivered: 45, outCurrency: 'EUR',
+      commissionAmount: 0, inAccountId: 'U', outAccountId: 'E', costs: [], settlements: [{ id: 's3', date: '2026-10-04', amount: 45, accountId: 'E' }], snapshot: { base: 'USD', rates: { USD: 1, EUR: 1.1 } } };
+    var pst = { settings: { baseCurrency: 'USD', rates: { USD: 1, USDT: 1, EUR: 1.1 } }, snapshots: {}, prices: {}, investments: [], debts: [], transactions: [],
+      accounts: [{ id: 'U', currency: 'USD', initialBalance: 0 }, { id: 'U2', currency: 'USD', initialBalance: 0 }, { id: 'E', currency: 'EUR', initialBalance: 0 }],
+      exchanges: [px1, px2] };
+    eq('Saldos: U = 50 (x2) + 40 (cobro) = 90 · U2 = 60 (cobro) · E = −90 (x1) − 45 (entrega x2) = −135',
+      C.accountBalances(pst).map(function (a) { return a.balance; }), [90, 60, -135]);
+    var ptp = C.thirdParty(pst, '2026-10-31');
+    eq('Por cobrar y por pagar: ambos saldados (aparecen en «Saldadas»), nada pendiente',
+      [ptp.receivables.map(function (i) { return i.status; }), ptp.payables.map(function (i) { return i.status; }), ptp.receivableBase, ptp.payableBase], [['pagada'], ['pagada'], 0, 0]);
+    var pser = C.netWorthSeries(pst, ['2026-10-06'], { today: '2026-10-31' })[0];
+    eq('El 6/10 (antes del 2.º cobro): cuentas 90 − 135 EUR×1.1 = −58.5 · te deben 60 → total 1.5 (= ganancias 1 + 0.5)',
+      [pser.cash, pser.terceros, pser.total], [-58.5, 60, 1.5]);
+    var px3 = { id: 'x3', date: '2026-10-03', status: 'pendiente_cobro', received: 20, inCurrency: 'USD', delivered: 18, outCurrency: 'EUR', inAccountId: 'U', outAccountId: null, costs: [] };
+    eq('Cambio pendiente antiguo (sin registros): no entra nada en U y se debe todo (20)',
+      [C.accountBalances(Object.assign({}, pst, { exchanges: [px3] }))[0].balance, C.thirdParty(Object.assign({}, pst, { exchanges: [px3] }), '2026-10-31').receivableBase], [0, 20]);
+
     section('Registro por voz o texto');
     var vctx = { today: '2026-10-14', defaultAccountId: 'efe', currencies: ['USD', 'USDT', 'EUR'],
       accounts: [{ id: 'efe', name: 'Efectivo', currency: 'USD' }, { id: 'bin', name: 'Binance', currency: 'USDT' }, { id: 'eur', name: 'Cuenta en euros', currency: 'EUR' }],

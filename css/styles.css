@@ -624,3 +624,6 @@ main { padding-bottom: 96px; }   /* que el botón «+» no tape lo último de ca
 .news-list a:hover { text-decoration: underline; }
 .news-list .sub { font-size: .78rem; color: var(--muted); margin-top: 3px; }
 .risk-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+
+/* Resumen del cobro/entrega de un cambio: texto que baja de línea */
+#pay-list li.pay-note { display: block; white-space: normal; line-height: 1.5; }

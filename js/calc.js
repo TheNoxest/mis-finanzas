@@ -247,8 +247,11 @@
     });
     // Cambios de divisas: entra lo recibido, sale lo entregado y los costos (salvo lo que siga pendiente)
     (state.exchanges || []).forEach(function (x) {
-      if (x.status !== 'pendiente_cobro' && x.inAccountId) add(x.inAccountId, Number(x.received), x);
-      if (x.status !== 'pendiente_entrega' && x.outAccountId) add(x.outAccountId, -Number(x.delivered), x);
+      var st = exchangeSettlement(x);
+      if (st && st.side === 'in') (x.settlements || []).forEach(function (s) { if (s.accountId) add(s.accountId, Number(s.amount), s); });
+      else if (x.status !== 'pendiente_cobro' && x.inAccountId) add(x.inAccountId, Number(x.received), x);
+      if (st && st.side === 'out') (x.settlements || []).forEach(function (s) { if (s.accountId) add(s.accountId, -Number(s.amount), s); });
+      else if (x.status !== 'pendiente_entrega' && x.outAccountId) add(x.outAccountId, -Number(x.delivered), x);
       (x.costs || []).forEach(function (c) { if (c.accountId) add(c.accountId, -Number(c.amount), x); });
     });
     // Deudas: un préstamo mueve dinero al crearse; cada abono entra (por cobrar) o sale (por pagar)
@@ -539,6 +542,22 @@
     };
   }
 
+  /**
+   * Cobro o entrega pendiente de un cambio de divisas.
+   *  lado 'in'  = falta cobrar al cliente (total = recibido) · 'out' = falta entregarle (total = entregado)
+   *  Lo cobrado/entregado después va en x.settlements [{date, amount, accountId}]; x.settleSide recuerda el lado
+   *  cuando ya está saldado (estado «completada»). Devuelve null si el cambio nunca estuvo pendiente.
+   */
+  function exchangeSettlement(x) {
+    var side = x.status === 'pendiente_cobro' ? 'in' : x.status === 'pendiente_entrega' ? 'out' : (x.settleSide || null);
+    if (!side) return null;
+    var total = round(Number(side === 'in' ? x.received : x.delivered) || 0, 2);
+    var paid = sum((x.settlements || []).map(function (s) { return s.amount; }));
+    var pending = round(total - paid, 2);
+    return { side: side, currency: side === 'in' ? x.inCurrency : x.outCurrency, total: total, paid: paid,
+      pending: pending > 0 ? pending : 0, status: pending <= 0 ? 'pagada' : paid > 0 ? 'parcial' : 'pendiente' };
+  }
+
   /** Saldo de una deuda: total − abonos. Estado: pendiente, parcial o pagada. */
   function debtBalance(d) {
     var paid = sum((d.payments || []).map(function (p) { return p.amount; }));
@@ -562,13 +581,11 @@
       (d.kind === 'cobrar' ? rec : pay).push(item);
     });
     (state.exchanges || []).forEach(function (x) {
-      if (x.status === 'pendiente_entrega') {
-        pay.push({ source: 'cambio', id: x.id, person: x.client, concept: 'Entregar cambio', currency: x.outCurrency, date: x.date, dueDate: null,
-          total: Number(x.delivered), paid: 0, pending: Number(x.delivered), status: 'pendiente', pendingBase: toBase(x.delivered, x.outCurrency, rates) });
-      } else if (x.status === 'pendiente_cobro') {
-        rec.push({ source: 'cambio', id: x.id, person: x.client, concept: 'Cobrar cambio', currency: x.inCurrency, date: x.date, dueDate: null,
-          total: Number(x.received), paid: 0, pending: Number(x.received), status: 'pendiente', pendingBase: toBase(x.received, x.inCurrency, rates) });
-      }
+      var st = exchangeSettlement(x);
+      if (!st) return;
+      (st.side === 'in' ? rec : pay).push({ source: 'cambio', id: x.id, person: x.client, concept: st.side === 'in' ? 'Cobrar cambio' : 'Entregar cambio',
+        currency: st.currency, date: x.date, dueDate: null, total: st.total, paid: st.paid, pending: st.pending, status: st.status,
+        pendingBase: toBase(st.pending, st.currency, rates) });
     });
     [rec, pay].forEach(function (list) {
       list.forEach(function (it) {
@@ -751,7 +768,9 @@
         settings: state.settings, accounts: state.accounts,
         transactions: state.transactions.filter(function (t) { return t.date <= d; }),
         investments: state.investments.filter(function (o) { return o.date <= d; }),
-        exchanges: (state.exchanges || []).filter(function (x) { return x.date <= d; }),
+        exchanges: (state.exchanges || []).filter(function (x) { return x.date <= d; }).map(function (x) {
+          return x.settlements ? Object.assign({}, x, { settlements: x.settlements.filter(function (s) { return s.date <= d; }) }) : x;
+        }),
         debts: (state.debts || []).filter(function (x) { return x.date <= d; }).map(function (x) {
           return Object.assign({}, x, { payments: (x.payments || []).filter(function (pm) { return pm.date <= d; }) });
         })
@@ -791,7 +810,7 @@
     klinePlan: klinePlan, opMarkers: opMarkers,
     custodyOf: custodyOf, accountHoldings: accountHoldings,
     rankByUse: rankByUse, swipeIntent: swipeIntent, pullIntent: pullIntent,
-    exchangeQuote: exchangeQuote, exchangeProfit: exchangeProfit, debtBalance: debtBalance, thirdParty: thirdParty,
+    exchangeQuote: exchangeQuote, exchangeProfit: exchangeProfit, debtBalance: debtBalance, thirdParty: thirdParty, exchangeSettlement: exchangeSettlement,
     flowTransactions: flowTransactions,
     samePeg: samePeg,
     transferFee: transferFee,

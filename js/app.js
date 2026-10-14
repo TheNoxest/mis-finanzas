@@ -2167,8 +2167,9 @@
     $('#debt-list-title').textContent = filter === 'paid' ? 'Saldadas' : filter === 'all' ? 'Todas' : 'Pendientes';
     var editing = $('#debt-form').editId.value;
     $('#debt-list').innerHTML = list.length ? list.map(function (it) {
-      var attr = it.source === 'cambio' ? 'data-open-fx="' + it.id + '"' : 'data-open-debt="' + it.id + '"';
-      return '<li class="clickable' + (editing === it.id ? ' editing' : '') + '" ' + attr + ' tabindex="0" role="button">' +
+      var attr = it.source === 'cambio' ? 'data-settle-fx="' + it.id + '"' : 'data-open-debt="' + it.id + '"';
+      var isEditing = it.source === 'cambio' ? payFx === it.id : editing === it.id;
+      return '<li class="clickable' + (isEditing ? ' editing' : '') + '" ' + attr + ' tabindex="0" role="button">' +
         '<span class="avatar">' + initials(it.person) + '</span>' +
         '<div class="main"><div class="title">' + esc(it.person || 'Sin nombre') + ' ' + dueTag(it) + '</div>' +
         '<div class="sub">' + esc(it.concept || '—') + ' · ' + fmtDate(it.date) + (it.dueDate ? ' · vence ' + fmtDate(it.dueDate) : '') +
@@ -2196,6 +2197,7 @@
 
   function resetDebtForm() {
     var f = $('#debt-form');
+    payFx = null;
     f.reset(); f.editId.value = '';
     f.dataset.kind = accTab === 'pagar' ? 'pagar' : 'cobrar';
     fillSelect(f.currency, currencyOptions(), state.settings.last.debtCurrency || base());
@@ -2211,6 +2213,7 @@
   function editDebt(id) {
     var d = byId(state.debts, id); if (!d) return;
     if (accTab !== d.kind) { showView('cuentas/' + d.kind); }
+    payFx = null;
     var f = $('#debt-form');
     f.dataset.kind = d.kind;
     f.editId.value = d.id; f.person.value = d.person || ''; f.concept.value = d.concept || '';
@@ -2225,7 +2228,77 @@
     $('#debt-payments').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
+  // ---- Cobro / entrega de un cambio pendiente (misma tarjeta que los abonos de deudas)
+  var payFx = null;   // id del cambio cuyo cobro o entrega se está registrando
+  function openFxSettle(id) {
+    var x = byId(state.exchanges, id), st = x && C.exchangeSettlement(x);
+    if (!st) { editFx(id); return; }
+    var kind = st.side === 'in' ? 'cobrar' : 'pagar';
+    if (accTab !== kind) showView('cuentas/' + kind);
+    resetDebtForm();
+    payFx = id; $('#pay-form').dataset.debt = '';
+    renderDebts();
+    $('#debt-payments').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  function renderFxPayments() {
+    var card = $('#debt-payments'), x = byId(state.exchanges, payFx), st = x && C.exchangeSettlement(x);
+    if (!st || (st.side === 'in') !== (accTab === 'cobrar')) { card.classList.add('hidden'); return; }
+    card.classList.remove('hidden');
+    var c = st.side === 'in', cur = st.currency;
+    var pct = st.total > 0 ? Math.min(100, st.paid / st.total * 100) : 0;
+    $('#pay-title').textContent = (c ? 'Cobro del cambio de ' : 'Entrega del cambio a ') + (x.client || 'cliente');
+    $('#pay-progress').innerHTML = '<span style="width:' + pct + '%"></span>';
+    var sets = (x.settlements || []).slice().sort(function (a, b2) { return a.date < b2.date ? 1 : -1; });
+    $('#pay-list').innerHTML = '<li class="sub pay-note" style="border:0;padding:4px 0 2px">Cambio del ' + fmtDate(x.date) + ': ' + (c ? 'el cliente te paga ' : 'le entregas ') +
+      '<b>' + fmtMoney(st.total, cur) + '</b> (' + fmtMoney(x.received, x.inCurrency) + ' → ' + fmtMoney(x.delivered, x.outCurrency) + ') · ' +
+      '<button type="button" class="link small" data-action="fx-open-edit" data-id="' + x.id + '">Ver o editar el cambio</button></li>' +
+      '<li class="sub pay-note" style="border:0;padding:2px 0 8px">' + (c ? 'Cobrado ' : 'Entregado ') + fmtMoney(st.paid, cur) + ' de ' + fmtMoney(st.total, cur) +
+      ' · pendiente <b>' + fmtMoney(st.pending, cur) + '</b></li>' +
+      sets.map(function (pm) {
+        return '<li><span class="avatar ' + (c ? 'in' : 'out') + '">' + icon(c ? 'i-in' : 'i-out') + '</span><div class="main"><div class="title">' + fmtMoney(pm.amount, cur) + '</div>' +
+          '<div class="sub">' + fmtDate(pm.date) + (pm.accountId ? ' · ' + esc(accName(pm.accountId)) : ' · sin cuenta') + (pm.note ? ' · ' + esc(pm.note) : '') + '</div></div>' +
+          '<div class="row-actions"><button class="mini" data-del-settle="' + pm.id + '" aria-label="Eliminar">' + icon('i-x') + '</button></div></li>';
+      }).join('');
+    var pf = $('#pay-form');
+    pf.classList.toggle('hidden', st.status === 'pagada');
+    $('#pay-acc-label').textContent = c ? 'Entra en' : 'Sale de';
+    $('#pay-submit').textContent = c ? 'Registrar cobro' : 'Registrar entrega';
+    if (pf.dataset.debt !== 'fx:' + x.id) {
+      pf.dataset.debt = 'fx:' + x.id;
+      pf.amount.value = st.pending; pf.date.value = S.today(); pf.note.value = '';
+      fillSelect(pf.accountId, accountsFor(cur, 'Sin cuenta'), (c ? x.inAccountId : x.outAccountId) || '');
+    }
+  }
+  /** Registra un cobro (o entrega) del cambio; si queda saldado, el cambio pasa a «completado». */
+  function settleFx(f) {
+    var x = byId(state.exchanges, payFx), st = x && C.exchangeSettlement(x);
+    if (!st) return;
+    var amt = num(f.amount.value);
+    if (!(amt > 0)) { toast('Ingresa un monto mayor a 0'); return; }
+    if (amt > st.pending + 0.001) { toast('Supera lo pendiente (' + fmtMoney(st.pending, st.currency) + ')'); return; }
+    if (!f.date.value) { toast('Elige la fecha'); return; }
+    x.settleSide = st.side;
+    x.settlements = (x.settlements || []).concat([{ id: S.uid(), date: f.date.value, amount: C.round(amt, 2), accountId: f.accountId.value || null, note: f.note.value.trim(), createdAt: Date.now() }]);
+    var ns = C.exchangeSettlement(x);
+    if (ns.status === 'pagada') x.status = 'completada';
+    invalidateSnapshots(f.date.value);
+    f.dataset.debt = '';
+    toast(ns.status === 'pagada' ? (st.side === 'in' ? '¡Cobrado! El cambio queda completado.' : '¡Entregado! El cambio queda completado.')
+      : (st.side === 'in' ? 'Cobro registrado' : 'Entrega registrada') + ' · pendiente ' + fmtMoney(ns.pending, ns.currency));
+    persist();
+  }
+  function deleteSettlement(sid) {
+    var x = byId(state.exchanges, payFx); if (!x || !confirm('¿Eliminar este registro?')) return;
+    var pm = byId(x.settlements || [], sid); if (pm) invalidateSnapshots(pm.date);
+    x.settlements = (x.settlements || []).filter(function (s) { return s.id !== sid; });
+    var st = C.exchangeSettlement(x);
+    if (st && st.pending > 0) x.status = st.side === 'in' ? 'pendiente_cobro' : 'pendiente_entrega';
+    if (!x.settlements.length && x.status !== 'completada') delete x.settleSide;
+    $('#pay-form').dataset.debt = ''; persist(); toast('Eliminado');
+  }
+
   function renderDebtPayments() {
+    if (payFx) { renderFxPayments(); return; }
     var f = $('#debt-form'), card = $('#debt-payments');
     var d = f.editId.value ? byId(state.debts, f.editId.value) : null;
     if (!d) { card.classList.add('hidden'); return; }
@@ -2280,6 +2353,7 @@
 
   function onPaySubmit(e) {
     e.preventDefault();
+    if (payFx) { settleFx(e.target); return; }
     var f = e.target, d = byId(state.debts, $('#debt-form').editId.value);
     if (!d) return;
     var amt = num(f.amount.value), bal = C.debtBalance(d);
@@ -2451,6 +2525,7 @@
     fillSelect(f.outAccountId, accountsFor(f.outCurrency.value, 'Ninguna (no la registro)'), last.fxOutAcc || '');
     setMarketRate();
     $('#fx-form-title').textContent = 'Nuevo cambio';
+    $('#fx-settle-hint').classList.add('hidden');
     $('[data-action="cancel-fx"]').classList.add('hidden');
     $('[data-action="delete-fx"]').classList.add('hidden');
     syncFxForm();
@@ -2474,6 +2549,14 @@
     f.note.value = x.note || '';
     (x.costs || []).forEach(fxCostRow);
     $('#fx-form-title').textContent = 'Editar cambio';
+    var st = C.exchangeSettlement(x), hint = $('#fx-settle-hint');
+    if (st && (st.status !== 'pagada' || (x.settlements || []).length)) {
+      hint.innerHTML = (st.side === 'in' ? 'Cobrado ' : 'Entregado ') + fmtMoney(st.paid, st.currency) + ' de ' + fmtMoney(st.total, st.currency) +
+        (st.pending > 0 ? ' · pendiente <b>' + fmtMoney(st.pending, st.currency) + '</b>. ' : '. ') +
+        '<button type="button" class="link small" data-action="fx-settle" data-id="' + x.id + '">' + (st.pending > 0 ? (st.side === 'in' ? 'Registrar cobro →' : 'Registrar entrega →') : 'Ver registros →') + '</button>' +
+        ((x.settlements || []).length ? '<br><span class="small">El estado se calcula con lo cobrado o entregado.</span>' : '');
+      hint.classList.remove('hidden');
+    } else hint.classList.add('hidden');
     $('[data-action="cancel-fx"]').classList.remove('hidden');
     $('[data-action="delete-fx"]').classList.remove('hidden');
     syncFxForm();
@@ -2504,6 +2587,12 @@
       snapshot: snapshotRates(curs, existing ? existing.snapshot : null) // tasas fijadas al registrar: la ganancia no cambia después
     };
     invalidateSnapshots(existing && existing.date < data.date ? existing.date : data.date);
+    // Con cobros/entregas registrados, el estado sale de lo pendiente (no del selector)
+    if (existing && (existing.settlements || []).length) {
+      var probe = Object.assign({}, existing, data, { status: 'completada' });
+      var pst = C.exchangeSettlement(probe);
+      data.status = pst.pending > 0 ? (pst.side === 'in' ? 'pendiente_cobro' : 'pendiente_entrega') : 'completada';
+    }
     if (existing) { Object.assign(existing, data); toast('Cambio actualizado'); }
     else {
       data.id = S.uid(); data.createdAt = Date.now();
@@ -2519,6 +2608,11 @@
   }
 
   var FX_STATUS = { completada: '', pendiente_entrega: '<span class="tag warn">Falta entregar</span>', pendiente_cobro: '<span class="tag warn">Falta cobrar</span>' };
+  function fxStatusTag(x) {
+    var st = C.exchangeSettlement(x);
+    if (!st || st.status === 'pagada') return FX_STATUS[x.status] || '';
+    return '<span class="tag warn">' + (st.side === 'in' ? 'Falta cobrar ' : 'Falta entregar ') + fmtMoney(st.pending, st.currency) + '</span>';
+  }
 
   function renderExchanges() {
     if (accTab !== 'cambios') return;
@@ -2547,7 +2641,7 @@
       var pr = C.exchangeProfit(x, rates());
       return '<li class="clickable' + (editing === x.id ? ' editing' : '') + '" data-open-fx="' + x.id + '" tabindex="0" role="button">' +
         '<span class="avatar tr">' + icon('i-swap') + '</span>' +
-        '<div class="main"><div class="title">' + esc(x.client || 'Cliente') + ' ' + FX_STATUS[x.status] + '</div>' +
+        '<div class="main"><div class="title">' + esc(x.client || 'Cliente') + ' ' + fxStatusTag(x) + '</div>' +
         '<div class="sub">' + fmtDate(x.date) + ' · ' + fmtMoney(x.received, x.inCurrency) + ' → ' + fmtMoney(x.delivered, x.outCurrency) +
         ' · comisión ' + fmtMoney(x.commissionAmount, x.inCurrency) + ((x.costs || []).length ? ' · costos ' + fmtMoney(pr.costs, b) : '') + '</div></div>' +
         '<div class="amt"><span class="' + (x.status === 'completada' ? trend(pr.profit) : 'muted') + '">' + fmtSigned(pr.profit, b) + '</span>' +
@@ -2634,8 +2728,14 @@
       else if (o.custodyAccountId === id) push(o.date, (buy ? 'Entra ' : 'Sale ') + o.ticker, 'Pagado desde ' + accName(o.accountId), null, (buy ? '+' : '−') + qty);
     });
     state.exchanges.forEach(function (x) {
-      if (x.inAccountId === id && x.status !== 'pendiente_cobro') push(x.date, 'Cambio · recibido de ' + (x.client || 'cliente'), fmtMoney(x.received, x.inCurrency) + ' → ' + fmtMoney(x.delivered, x.outCurrency), Number(x.received));
-      if (x.outAccountId === id && x.status !== 'pendiente_entrega') push(x.date, 'Cambio · entregado a ' + (x.client || 'cliente'), fmtMoney(x.received, x.inCurrency) + ' → ' + fmtMoney(x.delivered, x.outCurrency), -x.delivered);
+      var xs = C.exchangeSettlement(x);
+      (x.settlements || []).forEach(function (s) {
+        if (s.accountId === id && xs) push(s.date, xs.side === 'in' ? 'Cobro de cambio · ' + (x.client || 'cliente') : 'Entrega de cambio · ' + (x.client || 'cliente'), s.note || '', xs.side === 'in' ? Number(s.amount) : -s.amount);
+      });
+      if (xs && xs.side === 'in') { /* lo recibido entra con cada cobro */ }
+      else if (x.inAccountId === id && x.status !== 'pendiente_cobro') push(x.date, 'Cambio · recibido de ' + (x.client || 'cliente'), fmtMoney(x.received, x.inCurrency) + ' → ' + fmtMoney(x.delivered, x.outCurrency), Number(x.received));
+      if (xs && xs.side === 'out') { /* lo entregado sale con cada entrega */ }
+      else if (x.outAccountId === id && x.status !== 'pendiente_entrega') push(x.date, 'Cambio · entregado a ' + (x.client || 'cliente'), fmtMoney(x.received, x.inCurrency) + ' → ' + fmtMoney(x.delivered, x.outCurrency), -x.delivered);
       (x.costs || []).forEach(function (c) { if (c.accountId === id) push(x.date, 'Costo de cambio', c.concept || '', -c.amount); });
     });
     state.debts.forEach(function (d) {
@@ -3311,6 +3411,8 @@
       if (oa) { openAccount(oa.dataset.openAccount); return true; }
       var od = e.target.closest('[data-open-debt]');
       if (od) { editDebt(od.dataset.openDebt); return true; }
+      var sfx = e.target.closest('[data-settle-fx]');
+      if (sfx) { openFxSettle(sfx.dataset.settleFx); return true; }
       var ofx = e.target.closest('[data-open-fx]');
       if (ofx) { editFx(ofx.dataset.openFx); return true; }
       var ao = e.target.closest('[data-open-asset]');
@@ -3320,7 +3422,7 @@
       if (row.dataset.editTx) editTx(row.dataset.editTx); else editInv(row.dataset.editInv);
       return true;
     }
-    document.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target.matches('li[data-edit-tx], li[data-edit-inv], [data-open-asset], li[data-open-debt], li[data-open-fx], [data-open-account]')) openRow(e); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target.matches('li[data-edit-tx], li[data-edit-inv], [data-open-asset], li[data-open-debt], li[data-open-fx], li[data-settle-fx], [data-open-account]')) openRow(e); });
     $$('input[name="ex-tab"]').forEach(function (r) { r.addEventListener('change', function () { explore.tab = r.value; renderExplore(); }); });
     $('#ex-fit').addEventListener('change', renderExplore);
 
@@ -3365,7 +3467,10 @@
           state.debts = state.debts.filter(function (x) { return x !== dd; });
           resetDebtForm(); persist(); toast('Eliminado');
         }
-      } else if (d.delPay) {
+      } else if (d.delSettle) { deleteSettlement(d.delSettle); }
+      else if (d.action === 'fx-open-edit') { editFx(d.id); }
+      else if (d.action === 'fx-settle') { openFxSettle(d.id); }
+      else if (d.delPay) {
         var dp = byId(state.debts, $('#debt-form').editId.value);
         if (dp && confirm('¿Eliminar este abono?')) {
           var pm = byId(dp.payments, d.delPay); if (pm) invalidateSnapshots(pm.date);
