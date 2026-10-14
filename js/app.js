@@ -27,8 +27,14 @@
   function fmtNum(v, minDp, maxDp) {
     return Number(v).toLocaleString(LOCALE, { minimumFractionDigits: minDp || 0, maximumFractionDigits: maxDp == null ? 8 : maxDp });
   }
+  var UI_KEY = 'misFinanzas.ui';   // preferencias de este dispositivo (no se sincronizan)
+  function uiPrefs() { try { return JSON.parse(localStorage.getItem(UI_KEY)) || {}; } catch (e) { return {}; } }
+  function setUiPref(k, v) { var p = uiPrefs(); p[k] = v; try { localStorage.setItem(UI_KEY, JSON.stringify(p)); } catch (e) { /* sin almacenamiento */ } }
+  var privacy = !!(uiPrefs().privacyOnOpen || uiPrefs().privacy);
+  var MASK = '••••';
   function fmtMoney(v, cur) {
     if (v === null || v === undefined || isNaN(v)) return '—';
+    if (privacy) return cur + ' ' + MASK;
     try {
       return new Intl.NumberFormat(LOCALE, { style: 'currency', currency: cur, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
     } catch (e) { // códigos no ISO (p. ej. USDT)
@@ -61,9 +67,19 @@
   function toast(msg) {
     var t = $('#toast');
     t.textContent = msg;
+    t.classList.remove('actionable');
     t.classList.add('show');
     clearTimeout(toast._t);
     toast._t = setTimeout(function () { t.classList.remove('show'); }, 2600);
+  }
+  /** Aviso con un botón (p. ej. «Deshacer»); se mantiene 6 s. */
+  function toastAction(msg, label, fn) {
+    var t = $('#toast');
+    t.innerHTML = '<span>' + esc(msg) + '</span><button type="button" class="toast-btn">' + esc(label) + '</button>';
+    t.classList.add('show', 'actionable');
+    t.querySelector('.toast-btn').onclick = function () { t.classList.remove('show', 'actionable'); clearTimeout(toast._t); fn(); };
+    clearTimeout(toast._t);
+    toast._t = setTimeout(function () { t.classList.remove('show', 'actionable'); }, 6000);
   }
 
   // ================================================================ lookups
@@ -988,6 +1004,7 @@
 
   /** Eje Y abreviado y consistente: 950 · 1,5 k · 2 M */
   function fmtCompact(v) {
+    if (privacy) return '•••';
     var a = Math.abs(v);
     if (a >= 1e6) return fmtNum(v / 1e6, 0, 1) + ' M';
     if (a >= 1e3) return fmtNum(v / 1e3, 0, 1) + ' k';
@@ -2520,6 +2537,195 @@
     } catch (e) { toast(e.message); }
   }
 
+  // ================================================================ Sprint 1: borrar con «Deshacer»
+  /** Borra un movimiento ('tx') u operación ('inv') y ofrece deshacer durante 6 s (sin ventana de confirmación). */
+  function deleteWithUndo(kind, id) {
+    var key = kind === 'tx' ? 'transactions' : 'investments';
+    var idx = -1;
+    state[key].forEach(function (x, i) { if (x.id === id) idx = i; });
+    if (idx < 0) return;
+    var item = state[key][idx];
+    if (kind === 'inv') {
+      var remaining = state.investments.filter(function (i) { return i.id !== id; });
+      if (C.buildPositions(remaining, rates()).errors.length) { toast('No se puede: dejaría una venta sin compra previa'); return; }
+    }
+    invalidateSnapshots(item.date);
+    state[key].splice(idx, 1);
+    if (kind === 'tx' && $('#tx-form').editId.value === id) resetTxForm();
+    if (kind === 'inv' && $('#inv-form').editId.value === id) resetInvForm();
+    persist();
+    toastAction(kind === 'tx' ? 'Movimiento eliminado' : 'Operación eliminada', 'Deshacer', function () {
+      if (byId(state[key], id)) return;
+      state[key].splice(Math.min(idx, state[key].length), 0, item);
+      invalidateSnapshots(item.date);
+      persist();
+      toast('Restaurado');
+    });
+  }
+
+  // ================================================================ Sprint 1: registro rápido («+»)
+  var quick = { type: 'egreso', accountId: null, categoryId: null };
+
+  function quickAccounts() {
+    var ids = C.rankByUse(state.accounts.map(function (a) { return a.id; }), state.transactions, 'accountId', S.today());
+    return ids.map(account);
+  }
+  function quickCategories(type) {
+    var cats = state.categories.filter(function (c) { return c.type === type; });
+    var ids = C.rankByUse(cats.map(function (c) { return c.id; }), state.transactions.filter(function (t) { return t.type === type; }), 'categoryId', S.today());
+    return ids.map(function (id) { return byId(state.categories, id); });
+  }
+  function chip(attr, value, label, sub, on) {
+    return '<button type="button" class="chip-opt" role="radio" ' + attr + '="' + esc(value) + '" aria-checked="' + (on ? 'true' : 'false') + '">' +
+      esc(label) + (sub ? '<small>' + esc(sub) + '</small>' : '') + '</button>';
+  }
+  function renderQuick() {
+    var f = $('#quick-sheet');
+    var accs = quickAccounts(), cats = quickCategories(quick.type);
+    if (!account(quick.accountId)) quick.accountId = (account(state.settings.last.accountId) || accs[0] || {}).id || null;
+    if (!byId(cats, quick.categoryId)) {
+      var lastCat = state.settings.last['cat_' + quick.type];
+      quick.categoryId = (byId(cats, lastCat) || cats[0] || {}).id || null;
+    }
+    $('#q-accounts').innerHTML = accs.length ? accs.map(function (a) { return chip('data-q-acc', a.id, a.name, a.currency, a.id === quick.accountId); }).join('')
+      : '<span class="muted small">Primero crea una cuenta en Cuentas.</span>';
+    $('#q-cats').innerHTML = cats.map(function (c) { return chip('data-q-cat', c.id, c.name, '', c.id === quick.categoryId); }).join('');
+    var acc = account(quick.accountId);
+    $('#q-cur').textContent = acc ? acc.currency : '';
+    $('#q-save').textContent = quick.type === 'ingreso' ? 'Guardar ingreso' : 'Guardar gasto';
+    fillSelect(f.methodId, [{ value: '', label: '—' }].concat(state.methods.map(function (m) { return { value: m.id, label: m.name }; })), f.methodId.value || state.settings.last.methodId || '');
+  }
+  /** Abre la hoja. Se llama dentro del toque del usuario para que el móvil abra el teclado numérico. */
+  function openQuick() {
+    var f = $('#quick-sheet');
+    f.reset();
+    quick.type = 'egreso'; quick.accountId = null; quick.categoryId = null;
+    f.date.value = S.today();
+    $('#quick-sheet').classList.remove('hidden');
+    $('#quick-backdrop').classList.remove('hidden');
+    document.body.classList.add('sheet-open');
+    renderQuick();
+    f.amount.focus();
+  }
+  function closeQuick() {
+    $('#quick-sheet').classList.add('hidden');
+    $('#quick-backdrop').classList.add('hidden');
+    document.body.classList.remove('sheet-open');
+    if (document.activeElement) document.activeElement.blur();
+  }
+  /** Interpreta el monto escrito: acepta coma o punto decimal y sumas («12,50+3»). */
+  function parseAmount(txt) {
+    var t = String(txt || '').replace(/\s/g, '').replace(/,(?=\d{1,2}$)/, '.').replace(/,/g, '');
+    if (!/^[0-9.+]+$/.test(t)) return NaN;
+    return t.split('+').reduce(function (s, x) { return s + (parseFloat(x) || 0); }, 0);
+  }
+  function onQuickSubmit(e) {
+    e.preventDefault();
+    var f = e.target;
+    var amount = C.round(parseAmount(f.amount.value), 2);
+    var acc = account(quick.accountId);
+    if (!(amount > 0)) { toast('Escribe el monto'); f.amount.focus(); return; }
+    if (!acc) { toast('Elige una cuenta'); return; }
+    if (!quick.categoryId) { toast('Elige una categoría'); return; }
+    var data = { id: S.uid(), createdAt: Date.now(), type: quick.type, date: f.date.value || S.today(), amount: amount, currency: acc.currency,
+      accountId: acc.id, categoryId: quick.categoryId, methodId: f.methodId.value, note: f.note.value.trim() };
+    invalidateSnapshots(data.date);
+    state.transactions.push(data);
+    var last = state.settings.last;
+    last.accountId = acc.id; last.methodId = data.methodId; last['cat_' + data.type] = data.categoryId;
+    closeQuick();
+    persist();
+    toastAction((data.type === 'ingreso' ? 'Ingreso' : 'Gasto') + ' guardado: ' + fmtMoney(data.amount, data.currency) + ' · ' + catName(data.categoryId), 'Deshacer',
+      function () { state.transactions = state.transactions.filter(function (t) { return t.id !== data.id; }); persist(); toast('Registro deshecho'); });
+  }
+
+  // ================================================================ Sprint 1: modo privado
+  function applyPrivacy() {
+    document.body.classList.toggle('privacy', privacy);
+    var b = $('#privacy-btn');
+    b.setAttribute('aria-pressed', privacy ? 'true' : 'false');
+    b.title = privacy ? 'Mostrar montos' : 'Ocultar montos';
+    b.setAttribute('aria-label', b.title);
+    b.querySelector('use').setAttribute('href', privacy ? '#i-eye-off' : '#i-eye');
+  }
+  function togglePrivacy() {
+    privacy = !privacy;
+    setUiPref('privacy', privacy);
+    applyPrivacy();
+    renderAll();
+    if (asset) { renderAssetHeader(); renderAssetChart(); renderAssetPosition(); }
+    toast(privacy ? 'Montos ocultos' : 'Montos visibles');
+  }
+
+  // ================================================================ Sprint 1: gestos táctiles
+  var gesture = null, suppressClickUntil = 0;
+  function bindGestures() {
+    var ptr = $('#ptr');
+    document.addEventListener('touchstart', function (e) {
+      if (e.touches.length !== 1 || document.body.classList.contains('sheet-open')) { gesture = null; return; }
+      var t = e.touches[0];
+      var row = e.target.closest('.list li[data-edit-tx], .list li[data-edit-inv]');
+      var atTop = window.scrollY <= 0 && !e.target.closest('.chart-svg, .search-results, dialog');
+      gesture = { x: t.clientX, y: t.clientY, dx: 0, dy: 0, row: row, atTop: atTop, axis: null };
+    }, { passive: true });
+
+    document.addEventListener('touchmove', function (e) {
+      if (!gesture) return;
+      var t = e.touches[0];
+      gesture.dx = t.clientX - gesture.x; gesture.dy = t.clientY - gesture.y;
+      if (!gesture.axis && (Math.abs(gesture.dx) > 10 || Math.abs(gesture.dy) > 10)) gesture.axis = Math.abs(gesture.dx) > Math.abs(gesture.dy) ? 'h' : 'v';
+      if (gesture.axis === 'h' && gesture.row) {
+        var dx = Math.max(-140, Math.min(140, gesture.dx));
+        var r = gesture.row;
+        r.classList.add('swiping'); r.classList.remove('swipe-back');
+        r.style.transform = 'translateX(' + dx + 'px)';
+        r.classList.toggle('swipe-delete', dx < -20);
+        r.classList.toggle('swipe-edit', dx > 20);
+      } else if (gesture.axis === 'v' && gesture.atTop && gesture.dy > 0) {
+        var pull = Math.min(gesture.dy, 140);
+        ptr.style.opacity = Math.min(1, pull / 80);
+        ptr.style.transform = 'translate(-50%, ' + (pull / 2 - 40) + 'px)';
+        var ready = C.pullIntent(gesture.dy, gesture.dx, true);
+        ptr.classList.toggle('ready', ready);
+        $('#ptr-text').textContent = ready ? 'Suelta para actualizar' : 'Arrastra para actualizar';
+      }
+    }, { passive: true });
+
+    document.addEventListener('touchend', function () {
+      var g = gesture; gesture = null;
+      if (!g) return;
+      if (g.row) {
+        var r = g.row;
+        r.classList.remove('swiping', 'swipe-delete', 'swipe-edit');
+        r.classList.add('swipe-back');
+        r.style.transform = '';
+        var intent = g.axis === 'h' ? C.swipeIntent(g.dx, g.dy) : null;
+        if (g.axis === 'h') suppressClickUntil = Date.now() + 400; // que el deslizamiento no cuente como toque
+        if (intent === 'delete') deleteWithUndo(r.dataset.editTx ? 'tx' : 'inv', r.dataset.editTx || r.dataset.editInv);
+        else if (intent === 'edit') { if (r.dataset.editTx) editTx(r.dataset.editTx); else editInv(r.dataset.editInv); }
+      }
+      if (g.axis === 'v' && g.atTop && C.pullIntent(g.dy, g.dx, true)) pullRefresh();
+      else { ptr.style.opacity = 0; ptr.style.transform = ''; ptr.classList.remove('ready'); }
+    }, { passive: true });
+
+    // Un clic justo después de deslizar no debe abrir la fila
+    document.addEventListener('click', function (e) {
+      if (Date.now() < suppressClickUntil && e.target.closest('.list li')) { e.stopPropagation(); e.preventDefault(); }
+    }, true);
+  }
+  function pullRefresh() {
+    var ptr = $('#ptr');
+    ptr.classList.add('loading'); ptr.classList.remove('ready');
+    $('#ptr-text').textContent = 'Actualizando…';
+    var jobs = [refreshPrices(false)];
+    if (Sync.config().enabled) jobs.push(Sync.syncNow());
+    Promise.all(jobs).catch(function () { /* los errores ya se muestran en su sitio */ }).then(function () {
+      ptr.classList.remove('loading');
+      ptr.style.opacity = 0; ptr.style.transform = '';
+      toast('Actualizado');
+    });
+  }
+
   // ================================================================ render
   function renderAll() {
     renderSelects();
@@ -2563,6 +2769,14 @@
 
     $('#acc-form').addEventListener('submit', onAccSubmit);
     $('#profile-form').addEventListener('submit', onProfileSubmit);
+    var qs = $('#quick-sheet');
+    qs.addEventListener('submit', onQuickSubmit);
+    $('#quick-backdrop').addEventListener('click', closeQuick);   // tocar fuera de la hoja la cierra
+    $$('input[name="qtype"]', qs).forEach(function (r) { r.addEventListener('change', function () { quick.type = r.value; quick.categoryId = null; renderQuick(); }); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && document.body.classList.contains('sheet-open')) closeQuick(); });
+    $('#privacy-on-open').checked = !!uiPrefs().privacyOnOpen;
+    $('#privacy-on-open').addEventListener('change', function (e) { setUiPref('privacyOnOpen', e.target.checked); });
+    bindGestures();
     $('#sync-card').addEventListener('submit', onSyncForm);
     $('#debt-form').addEventListener('submit', onDebtSubmit);
     $('#debt-form').currency.addEventListener('change', renderDebtAccountSelect);
@@ -2760,6 +2974,16 @@
       }
       else if (d.action === 'csv-debts') exportDebtsCSV();
       else if (d.action === 'sync-now') Sync.syncNow();
+      else if (d.action === 'quick-open') openQuick();
+      else if (d.action === 'quick-close') closeQuick();
+      else if (d.qAcc) { quick.accountId = d.qAcc; renderQuick(); }
+      else if (d.qCat) { quick.categoryId = d.qCat; renderQuick(); }
+      else if (d.action === 'quick-transfer') {
+        closeQuick(); showView('movimientos');
+        var tfq = $('#tx-form'); tfq.type.value = 'transferencia'; renderCategorySelect(); syncTxForm();
+        setTimeout(function () { tfq.amount.focus(); }, 0);
+      } else if (d.action === 'quick-exchange') { closeQuick(); showView('cuentas/cambios'); setTimeout(function () { $('#fx-form').amount.focus(); }, 0); }
+      else if (d.action === 'toggle-privacy') togglePrivacy();
       else if (d.action === 'backup-local-now') safetyBackup('manual').then(function () { renderVersionsCard(); toast('Copia guardada en este dispositivo'); });
       else if (d.restoreLocal) restoreFrom('local', d.restoreLocal);
       else if (d.restoreCloud) restoreFrom('cloud', d.restoreCloud);
@@ -2786,23 +3010,8 @@
       else if (d.action === 'csv-fx') exportFxCSV();
       else if (d.assetRange) { asset.range = d.assetRange; renderAssetRanges(); loadAssetHistory(); }
       else if (d.assetOp) prefillOperation(d.assetOp);
-      else if (d.action === 'delete-tx') {
-        var txId = $('#tx-form').editId.value;
-        if (txId && confirm('¿Eliminar este movimiento?')) {
-          invalidateSnapshots((byId(state.transactions, txId) || {}).date);
-          state.transactions = state.transactions.filter(function (t) { return t.id !== txId; });
-          resetTxForm(); persist(); toast('Movimiento eliminado');
-        }
-      } else if (d.action === 'delete-inv') {
-        var invId = $('#inv-form').editId.value;
-        var remaining = state.investments.filter(function (i) { return i.id !== invId; });
-        if (C.buildPositions(remaining, rates()).errors.length) { toast('No se puede: dejaría una venta sin compra previa'); return; }
-        if (invId && confirm('¿Eliminar esta operación?')) {
-          invalidateSnapshots((byId(state.investments, invId) || {}).date);
-          state.investments = remaining;
-          resetInvForm(); persist(); toast('Operación eliminada');
-        }
-      } else if (d.editAcc) editAcc(d.editAcc);
+      else if (d.action === 'delete-tx') { var txId = $('#tx-form').editId.value; if (txId) deleteWithUndo('tx', txId); }
+      else if (d.action === 'delete-inv') { var invId = $('#inv-form').editId.value; if (invId) deleteWithUndo('inv', invId); } else if (d.editAcc) editAcc(d.editAcc);
       else if (d.accMoves) {
         $('#f-account').value = d.accMoves; $('#f-month').value = ''; $('#f-type').value = '';
         showView('movimientos'); renderTxList();
@@ -2907,6 +3116,7 @@
   // ================================================================ init
   bind();
   $('#f-month').value = thisMonth();
+  applyPrivacy();
   resetTxForm();
   resetInvForm();
   resetAccForm();

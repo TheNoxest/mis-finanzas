@@ -386,6 +386,19 @@
     eq('Resumen de una versión', B.summarize({ accounts: [1, 2], transactions: [1], investments: [], debts: [1], exchanges: [] }),
       { accounts: 2, transactions: 1, investments: 0, debts: 1, exchanges: 0 });
 
+    section('Registro rápido y gestos (Sprint 1)');
+    var useRecs = [
+      { date: '2026-10-10', accountId: 'B', categoryId: 'comida' }, { date: '2026-10-11', accountId: 'B', categoryId: 'comida' },
+      { date: '2026-10-12', accountId: 'C', categoryId: 'ocio' }, { date: '2026-01-01', accountId: 'C', categoryId: 'ocio' },
+      { date: '2026-01-02', accountId: 'C', categoryId: 'ocio' }, { date: '2026-01-03', accountId: 'C', categoryId: 'ocio' }];
+    eq('Cuentas por uso (90 días): B (2) antes que C (1, lo viejo no cuenta), A (0) al final', C.rankByUse(['A', 'C', 'B'], useRecs, 'accountId', '2026-10-14'), ['B', 'C', 'A']);
+    eq('Empates: se respeta el orden original', C.rankByUse(['X', 'Y'], [], 'accountId', '2026-10-14'), ['X', 'Y']);
+    eq('Sin fecha límite cuentan todos: C (4) primero', C.rankByUse(['B', 'C'], useRecs, 'accountId', null), ['C', 'B']);
+    eq('Deslizar −90 px horizontal = borrar; +90 px = editar', [C.swipeIntent(-90, 10), C.swipeIntent(90, 5)], ['delete', 'edit']);
+    eq('Deslizar poco o en diagonal no hace nada', [C.swipeIntent(-50, 0), C.swipeIntent(-90, 60), C.swipeIntent(0, 0)], [null, null, null]);
+    eq('Arrastrar ↓ 100 px desde arriba = actualizar; no si no estás arriba ni si es diagonal',
+      [C.pullIntent(100, 5, true), C.pullIntent(100, 5, false), C.pullIntent(60, 0, true), C.pullIntent(100, 80, true)], [true, false, false, false]);
+
     section('Migración de datos v1 → v2');
     var v1 = { version: 1, settings: { baseCurrency: 'USD', rates: { USD: 1, EUR: 1.1 } }, categories: [], methods: [],
       transactions: [{ id: 't1', type: 'ingreso', amount: 10, currency: 'USD', date: '2026-01-01' }, { id: 't2', type: 'egreso', amount: 5, currency: 'EUR', date: '2026-01-02' }],

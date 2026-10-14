@@ -505,3 +505,61 @@ dialog::backdrop { background: rgba(0, 0, 0, .35); }
 .version-row button { min-height: 34px; padding: 4px 12px; font-size: .82rem; }
 .recovery-box { border: 1px solid var(--accent); background: var(--accent-soft); border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; }
 .version-row .main .title { white-space: normal; }
+
+/* ===== Sprint 1: botón «+», hoja de registro rápido, modo privado y gestos ===== */
+html, body { overscroll-behavior-y: contain; }   /* sin la recarga nativa al arrastrar: usamos la nuestra */
+.fab { position: fixed; right: 16px; bottom: calc(76px + env(safe-area-inset-bottom)); z-index: 12; width: 56px; height: 56px; min-height: 0;
+  padding: 0; border-radius: 18px; border: 0; background: var(--accent); color: var(--accent-ink); box-shadow: 0 6px 18px rgba(37, 106, 191, .35); }
+.fab .ic { width: 26px; height: 26px; stroke-width: 2.4; }
+.fab:active { transform: scale(.95); }
+@media (min-width: 820px) { .fab { bottom: 24px; right: 24px; } }
+body.sheet-open .fab { display: none; }
+
+.sheet-backdrop { position: fixed; inset: 0; z-index: 30; background: rgba(0, 0, 0, .35); }
+.sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 31; background: var(--surface); border-radius: 20px 20px 0 0;
+  padding: 8px 16px calc(16px + env(safe-area-inset-bottom)); box-shadow: 0 -8px 30px rgba(0, 0, 0, .2);
+  max-height: 88vh; overflow-y: auto; animation: sheet-in .18s ease-out; }
+@media (min-width: 820px) { .sheet { left: 50%; right: auto; width: 480px; transform: translateX(-50%); bottom: 24px; border-radius: 20px; } }
+@keyframes sheet-in { from { transform: translateY(30px); opacity: .4; } to { transform: translateY(0); opacity: 1; } }
+@media (min-width: 820px) { @keyframes sheet-in { from { opacity: .4; } to { opacity: 1; } } }
+.sheet-grip { width: 40px; height: 4px; border-radius: 4px; background: var(--grid); margin: 2px auto 10px; }
+.sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.sheet-links { display: flex; gap: 12px; }
+.sheet .amount-field { margin: 12px 0 8px; }
+.chips-label { font-size: .75rem; color: var(--ink-2); margin: 8px 0 4px; }
+.chips-scroll { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.chips-scroll::-webkit-scrollbar { display: none; }
+.chip-opt { flex: none; min-height: 36px; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-2);
+  font-size: .85rem; color: var(--ink); white-space: nowrap; }
+.chip-opt[aria-checked="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 650; }
+.chip-opt small { opacity: .75; margin-left: 4px; }
+.q-more { margin-top: 10px; }
+.q-more summary { cursor: pointer; font-size: .85rem; color: var(--accent); font-weight: 600; }
+.q-more .grid { margin-top: 8px; }
+body.sheet-open { overflow: hidden; }
+
+/* Modo privado: ícono activo */
+#privacy-btn[aria-pressed="true"] { color: var(--accent); outline: 2px solid var(--accent); }
+
+/* Toast con acción (Deshacer) */
+.toast.actionable { pointer-events: auto; display: flex; align-items: center; gap: 12px; }
+.toast-btn { min-height: 0; padding: 4px 10px; border: 0; border-radius: 8px; background: transparent; color: #7fb4ff; font-weight: 700; }
+
+/* Deslizar filas */
+.list li[data-edit-tx], .list li[data-edit-inv] { position: relative; touch-action: pan-y; }
+.list li.swiping { transition: none; }
+.list li.swipe-back { transition: transform .2s ease-out, background-color .2s; }
+.list li.swipe-delete { background: color-mix(in srgb, #d03b3b 16%, var(--surface)); }
+.list li.swipe-edit { background: var(--accent-soft); }
+.list li.swipe-delete::after, .list li.swipe-edit::after { position: absolute; top: 50%; transform: translateY(-50%); font-size: .8rem; font-weight: 700; }
+.list li.swipe-delete::after { content: 'Borrar'; right: -64px; color: #d03b3b; }
+.list li.swipe-edit::after { content: 'Editar'; left: -60px; color: var(--accent); }
+
+/* Arrastrar para actualizar */
+.ptr { position: fixed; left: 50%; top: 62px; z-index: 15; transform: translate(-50%, -60px); opacity: 0; display: flex; align-items: center; gap: 6px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 6px 12px; font-size: .8rem; box-shadow: var(--shadow);
+  transition: opacity .15s; pointer-events: none; }
+.ptr.ready { color: var(--accent); font-weight: 600; }
+.ptr.loading .ic { animation: spin 1s linear infinite; }
+main { padding-bottom: 96px; }   /* que el botón «+» no tape lo último de cada pantalla */
+@media (min-width: 820px) { main { padding-bottom: 96px; } }

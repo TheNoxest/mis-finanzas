@@ -427,6 +427,38 @@
     };
   }
 
+  // =================================================================== Registro rápido y gestos (Sprint 1)
+  /**
+   * Ordena ids por cuántas veces se usaron en los últimos `days` días (más usados primero).
+   * records: lista con `date` y el campo `field` (p. ej. accountId, categoryId). Empates: orden original.
+   */
+  function rankByUse(ids, records, field, today, days) {
+    days = days || 90;
+    var from = today ? addDays(today, -days) : null;
+    var count = {};
+    records.forEach(function (r) {
+      if (from && r.date < from) return;
+      var k = r[field];
+      if (k) count[k] = (count[k] || 0) + 1;
+    });
+    return ids.map(function (id, i) { return { id: id, n: count[id] || 0, i: i }; })
+      .sort(function (a, b) { return b.n - a.n || a.i - b.i; })
+      .map(function (x) { return x.id; });
+  }
+
+  /** Deslizar una fila: 'delete' (izquierda), 'edit' (derecha) o null. Debe ser claramente horizontal. */
+  function swipeIntent(dx, dy, threshold) {
+    threshold = threshold || 70;
+    if (Math.abs(dx) < threshold || Math.abs(dx) < 2 * Math.abs(dy)) return null;
+    return dx < 0 ? 'delete' : 'edit';
+  }
+
+  /** Arrastrar hacia abajo para actualizar: solo desde arriba del todo y claramente vertical. */
+  function pullIntent(dy, dx, atTop, threshold) {
+    threshold = threshold || 80;
+    return !!atTop && dy >= threshold && dy > 2 * Math.abs(dx);
+  }
+
   // =================================================================== Contenido de una cuenta
   /** Cuenta donde queda guardado un activo: la indicada (custodia) o, si no, la que pagó. */
   function custodyOf(op) { return op.custodyAccountId || op.accountId || null; }
@@ -698,6 +730,7 @@
     shiftMonths: shiftMonths, previousByMonths: previousByMonths, priceStats: priceStats,
     klinePlan: klinePlan, opMarkers: opMarkers,
     custodyOf: custodyOf, accountHoldings: accountHoldings,
+    rankByUse: rankByUse, swipeIntent: swipeIntent, pullIntent: pullIntent,
     exchangeQuote: exchangeQuote, exchangeProfit: exchangeProfit, debtBalance: debtBalance, thirdParty: thirdParty,
     flowTransactions: flowTransactions,
     seriesDates: seriesDates, monthlyCashflow: monthlyCashflow, categoryBreakdown: categoryBreakdown,
