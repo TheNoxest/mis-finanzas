@@ -222,8 +222,6 @@
   function accountBalances(state, opts) {
     opts = opts || {};
     var rates = state.settings.rates;
-    // En una vista Personal/Negocio se recorren TODOS los registros: add() ignora las cuentas de otro espacio
-    var src = state._all || state;
     var map = {};
     state.accounts.forEach(function (a) {
       map[a.id] = { account: a, moves: [Number(a.initialBalance) || 0], inflow: [], outflow: [] };
@@ -234,7 +232,7 @@
       m.moves.push(amount);
       if (inRange(item, opts.from, opts.to)) (amount >= 0 ? m.inflow : m.outflow).push(Math.abs(amount));
     }
-    src.transactions.forEach(function (t) {
+    state.transactions.forEach(function (t) {
       if (t.type === 'ingreso') add(t.accountId, Number(t.amount), t);
       else if (t.type === 'egreso') add(t.accountId, -Number(t.amount), t);
       else if (t.type === 'transferencia') {
@@ -242,19 +240,19 @@
         add(t.toAccountId, Number(t.toAmount), t);
       }
     });
-    src.investments.forEach(function (op) {
+    state.investments.forEach(function (op) {
       if (!op.accountId) return;
       var total = operationTotal(op);
       add(op.accountId, op.side === 'venta' ? total : -total, op);
     });
     // Cambios de divisas: entra lo recibido, sale lo entregado y los costos (salvo lo que siga pendiente)
-    (src.exchanges || []).forEach(function (x) {
+    (state.exchanges || []).forEach(function (x) {
       if (x.status !== 'pendiente_cobro' && x.inAccountId) add(x.inAccountId, Number(x.received), x);
       if (x.status !== 'pendiente_entrega' && x.outAccountId) add(x.outAccountId, -Number(x.delivered), x);
       (x.costs || []).forEach(function (c) { if (c.accountId) add(c.accountId, -Number(c.amount), x); });
     });
     // Deudas: un préstamo mueve dinero al crearse; cada abono entra (por cobrar) o sale (por pagar)
-    (src.debts || []).forEach(function (d) {
+    (state.debts || []).forEach(function (d) {
       var sign = d.kind === 'cobrar' ? 1 : -1;
       if (d.accountId) add(d.accountId, -sign * Number(d.amount), d);
       (d.payments || []).forEach(function (pm) { if (pm.accountId) add(pm.accountId, sign * Number(pm.amount), pm); });
@@ -591,11 +589,9 @@
         categoryId: '__cambios', accountId: x.inAccountId, date: x.date, note: x.client || '' };
     }).filter(function (t) { return t.amount > 0; });
     // Comisión de una transferencia en la misma moneda (o USDT ↔ USD): lo que se perdió por el camino es un gasto
-    var mine = {};
-    state.accounts.forEach(function (a) { mine[a.id] = true; });
     state.transactions.forEach(function (t) {
       var fee = transferFee(t);
-      if (fee && (!state.space || mine[t.fromAccountId])) extra.push({ id: 'tf_' + t.id, synthetic: true, type: fee > 0 ? 'egreso' : 'ingreso', amount: Math.abs(fee),
+      if (fee) extra.push({ id: 'tf_' + t.id, synthetic: true, type: fee > 0 ? 'egreso' : 'ingreso', amount: Math.abs(fee),
         currency: t.toCurrency, categoryId: '__comisiones', accountId: t.fromAccountId, date: t.date, note: t.note || '' });
     });
     return state.transactions.concat(extra);
@@ -718,24 +714,15 @@
     opts = opts || {};
     var rates = state.settings.rates;
     var snaps = state.snapshots || {};
-    var src = state._all || state;
-    var upTo = function (d) {
-      var before = function (x) { return x.date <= d; };
-      var debtsAt = function (list) { return (list || []).filter(before).map(function (x) {
-        return Object.assign({}, x, { payments: (x.payments || []).filter(before) }); }); };
-      return {
-        transactions: src.transactions.filter(before), investments: src.investments.filter(before),
-        exchanges: (src.exchanges || []).filter(before), debts: debtsAt(src.debts),
-        // Lo del espacio elegido (inversiones guardadas en sus cuentas, deudas y cambios suyos)
-        own: { investments: state.investments.filter(before), exchanges: (state.exchanges || []).filter(before), debts: debtsAt(state.debts) }
-      };
-    };
     return dates.map(function (d) {
-      var at = upTo(d);
       var sub = {
         settings: state.settings, accounts: state.accounts,
-        transactions: at.transactions, investments: at.own.investments, exchanges: at.own.exchanges, debts: at.own.debts,
-        _all: { transactions: at.transactions, investments: at.investments, exchanges: at.exchanges, debts: at.debts }
+        transactions: state.transactions.filter(function (t) { return t.date <= d; }),
+        investments: state.investments.filter(function (o) { return o.date <= d; }),
+        exchanges: (state.exchanges || []).filter(function (x) { return x.date <= d; }),
+        debts: (state.debts || []).filter(function (x) { return x.date <= d; }).map(function (x) {
+          return Object.assign({}, x, { payments: (x.payments || []).filter(function (pm) { return pm.date <= d; }) });
+        })
       };
       var bal = accountBalances(sub).filter(function (a) { return !opts.accountId || a.account.id === opts.accountId; });
       var cash = sum(bal.map(function (a) { return isNaN(a.balanceBase) ? 0 : a.balanceBase; }));
@@ -753,91 +740,11 @@
       var tp = opts.accountId ? null : thirdParty(sub, d);
       var other = tp ? round(tp.receivableBase - tp.payableBase, 2) : 0;
       var snap = snaps[d];
-      if (snap && d !== opts.today && !opts.accountId && !opts.assetType && !state.space) {
+      if (snap && d !== opts.today && !opts.accountId && !opts.assetType) {
         cash = snap.cash; invested = snap.invested; other = snap.terceros || 0; source = 'registro';
       }
       return { date: d, cash: cash, invested: invested, terceros: other, total: round(cash + invested + other, 2), source: source };
     });
-  }
-
-  // =================================================================== Personal / Negocio (Sprint 2)
-  /** Espacio de una cuenta: 'negocio' si se marcó así; si no, 'personal'. */
-  function spaceOfAccount(a) { return a && a.space === 'negocio' ? 'negocio' : 'personal'; }
-  function accountSpaces(accounts) {
-    var m = {};
-    (accounts || []).forEach(function (a) { m[a.id] = spaceOfAccount(a); });
-    return m;
-  }
-  /** Espacio de una deuda: el elegido a mano o, si no, el de la cuenta del préstamo (sin cuenta → personal). */
-  function debtSpace(d, spaces) {
-    if (d.space === 'personal' || d.space === 'negocio') return d.space;
-    return (d.accountId && spaces[d.accountId]) || 'personal';
-  }
-
-  /**
-   * Vista del estado para un espacio ('personal' | 'negocio'; cualquier otro valor = todo).
-   *  - cuentas del espacio; movimientos de esas cuentas (transferencias si una de las dos es del espacio)
-   *  - inversiones guardadas (custodia) en cuentas del espacio
-   *  - cambios de divisas = negocio; deudas según `debtSpace`
-   *  - `_all`: todos los registros, para que los saldos de las cuentas sigan siendo exactos
-   */
-  function inSpace(state, space) {
-    if (space !== 'personal' && space !== 'negocio') return state;
-    var sp = accountSpaces(state.accounts);
-    var isIn = function (id) { return !!id && sp[id] === space; };
-    return Object.assign({}, state, {
-      space: space,
-      accounts: state.accounts.filter(function (a) { return sp[a.id] === space; }),
-      transactions: state.transactions.filter(function (t) {
-        return t.type === 'transferencia' ? isIn(t.fromAccountId) || isIn(t.toAccountId) : isIn(t.accountId);
-      }),
-      investments: state.investments.filter(function (o) { return isIn(custodyOf(o)); }),
-      exchanges: space === 'negocio' ? (state.exchanges || []) : [],
-      debts: (state.debts || []).filter(function (d) { return debtSpace(d, sp) === space; }),
-      _all: state._all || { transactions: state.transactions, investments: state.investments, exchanges: state.exchanges || [], debts: state.debts || [] }
-    });
-  }
-
-  /**
-   * Transferencia entre espacios: 'retiro' (negocio → personal: el dueño saca dinero),
-   * 'aporte' (personal → negocio: el dueño pone dinero) o null.
-   */
-  function ownerMove(t, spaces) {
-    if (t.type !== 'transferencia') return null;
-    var a = spaces[t.fromAccountId], b = spaces[t.toAccountId];
-    if (!a || !b || a === b) return null;
-    return a === 'negocio' ? 'retiro' : 'aporte';
-  }
-
-  /**
-   * Resultado del negocio en un periodo (moneda base):
-   *  ganancia de cambios + otros ingresos del negocio − gastos del negocio = resultado.
-   *  Los retiros y aportes del dueño se informan aparte: NO son gasto ni ingreso del negocio.
-   */
-  function businessResult(state, opts) {
-    opts = opts || {};
-    var rates = state.settings.rates;
-    var view = inSpace(state, 'negocio');
-    var flows = flowTransactions(view).filter(function (t) { return inRange(t, opts.from, opts.to); });
-    var part = function (type, fx) {
-      return sum(flows.filter(function (t) { return t.type === type && (t.categoryId === '__cambios') === fx; })
-        .map(function (t) { var v = toBase(t.amount, t.currency, rates); return isNaN(v) ? 0 : v; }));
-    };
-    var fx = round(part('ingreso', true) - part('egreso', true), 2);
-    var income = part('ingreso', false), expense = part('egreso', false);
-    var sp = accountSpaces(state.accounts), aportes = [], retiros = [];
-    state.transactions.forEach(function (t) {
-      var k = ownerMove(t, sp);
-      if (!k || !inRange(t, opts.from, opts.to)) return;
-      // Se mide por lo que sale de la cuenta de origen
-      var v = toBase(t.amount, t.currency, rates);
-      if (!isNaN(v)) (k === 'retiro' ? retiros : aportes).push(v);
-    });
-    return {
-      fx: fx, income: income, expense: expense, result: round(fx + income - expense, 2),
-      withdrawals: sum(retiros), contributions: sum(aportes),
-      exchanges: view.exchanges.filter(function (x) { return x.status === 'completada' && inRange(x, opts.from, opts.to); }).length
-    };
   }
 
   var Calc = {
@@ -858,9 +765,7 @@
     transferFee: transferFee,
     parseAmount: parseAmount,
     seriesDates: seriesDates, monthlyCashflow: monthlyCashflow, categoryBreakdown: categoryBreakdown,
-    netWorthSeries: netWorthSeries,
-    spaceOfAccount: spaceOfAccount, accountSpaces: accountSpaces, debtSpace: debtSpace, inSpace: inSpace,
-    ownerMove: ownerMove, businessResult: businessResult
+    netWorthSeries: netWorthSeries
   };
 
   if (typeof module === 'object' && module.exports) module.exports = Calc;

@@ -416,61 +416,6 @@
     eq('La comisión aparece como gasto de 5 USD en «Comisiones de transferencia»', trFlows.map(function (t) { return [t.type, t.amount, t.currency]; }), [['egreso', 5, 'USD']]);
     eq('Gastos del periodo = 5 (la transferencia en sí no es gasto)', C.summarizeTransactions(C.flowTransactions(trs), trs.settings.rates).expense, 5);
 
-    section('Personal / Negocio (Sprint 2)');
-    // P1 Banco personal (USD 1000) · N1 Caja negocio (USD 500) · N2 Binance negocio (USDT 2000)
-    var sps = {
-      settings: { baseCurrency: 'USD', rates: { USD: 1, USDT: 1, EUR: 1.1 } },
-      accounts: [{ id: 'P1', currency: 'USD', initialBalance: 1000 }, { id: 'N1', currency: 'USD', initialBalance: 500, space: 'negocio' },
-        { id: 'N2', currency: 'USDT', initialBalance: 2000, space: 'negocio' }],
-      transactions: [
-        { id: 't1', type: 'ingreso', date: '2026-10-02', amount: 300, currency: 'USD', accountId: 'P1', categoryId: 'sal' },
-        { id: 't2', type: 'egreso', date: '2026-10-03', amount: 100, currency: 'USD', accountId: 'P1', categoryId: 'com' },
-        { id: 't3', type: 'egreso', date: '2026-10-04', amount: 20, currency: 'USD', accountId: 'N1', categoryId: 'tra' },
-        { id: 't4', type: 'ingreso', date: '2026-10-05', amount: 50, currency: 'USD', accountId: 'N1', categoryId: 'otr' },
-        { id: 't5', type: 'transferencia', date: '2026-10-06', amount: 200, currency: 'USD', fromAccountId: 'N1', toAccountId: 'P1', toAmount: 200, toCurrency: 'USD' },
-        { id: 't6', type: 'transferencia', date: '2026-10-07', amount: 100, currency: 'USD', fromAccountId: 'P1', toAccountId: 'N2', toAmount: 100, toCurrency: 'USDT' },
-        { id: 't7', type: 'transferencia', date: '2026-10-10', amount: 50, currency: 'USDT', fromAccountId: 'N2', toAccountId: 'P1', toAmount: 48, toCurrency: 'USD' }
-      ],
-      investments: [{ id: 'o1', side: 'compra', assetType: 'cripto', ticker: 'BTC', quantity: 0.01, price: 50000, currency: 'USD', fee: 0, date: '2026-10-08', accountId: 'P1' }],
-      exchanges: [{ id: 'x1', date: '2026-10-08', status: 'completada', amount: 1000, inCurrency: 'USD', outCurrency: 'USDT', rate: 0.97,
-        commissionAmount: 30, received: 1000, delivered: 970, inAccountId: 'N1', outAccountId: 'N2', costs: [], snapshot: { base: 'USD', rates: { USD: 1, USDT: 1 } } }],
-      debts: [
-        { id: 'd1', kind: 'cobrar', person: 'Ana', amount: 150, currency: 'USD', date: '2026-10-09', accountId: 'P1', payments: [] },
-        { id: 'd2', kind: 'cobrar', person: 'Cliente', amount: 80, currency: 'USD', date: '2026-10-09', accountId: 'N1', payments: [] },
-        { id: 'd3', kind: 'pagar', person: 'Proveedor', amount: 40, currency: 'USD', date: '2026-10-09', accountId: null, space: 'negocio', payments: [] }
-      ],
-      prices: { 'cripto|BTC': { price: 60000, currency: 'USD' } },
-      snapshots: { '2026-10-05': { cash: 1, invested: 2, terceros: 3, total: 6 } }
-    };
-    var spB = C.accountBalances(sps).map(function (a) { return a.balance; });
-    eq('Saldos: P1 1000+300−100+200−100−500 (BTC)−150 (préstamo)+48 = 698 · N1 500−20+50−200+1000−80 = 1250 · N2 2000+100−970−50 = 1080', spB, [698, 1250, 1080]);
-    eq('Espacio de cada cuenta: sin marcar = personal', [C.spaceOfAccount(sps.accounts[0]), C.spaceOfAccount(sps.accounts[1])], ['personal', 'negocio']);
-    var spMap = C.accountSpaces(sps.accounts);
-    eq('Deudas: d1 por su cuenta (personal), d2 por su cuenta (negocio), d3 elegida a mano (negocio)',
-      sps.debts.map(function (d) { return C.debtSpace(d, spMap); }), ['personal', 'negocio', 'negocio']);
-    eq('Transferencias entre espacios: N1→P1 retiro del dueño, P1→N2 aporte, ingreso normal = ninguno',
-      [C.ownerMove(sps.transactions[4], spMap), C.ownerMove(sps.transactions[5], spMap), C.ownerMove(sps.transactions[0], spMap)], ['retiro', 'aporte', null]);
-    var vP = C.inSpace(sps, 'personal'), vN = C.inSpace(sps, 'negocio');
-    eq('Vista Personal: 1 cuenta, movimientos t1 t2 t5 t6 t7, 1 inversión, sin cambios, deuda d1',
-      [vP.accounts.length, vP.transactions.map(function (t) { return t.id; }).join(' '), vP.investments.length, vP.exchanges.length, vP.debts.map(function (d) { return d.id; }).join(' ')],
-      [1, 't1 t2 t5 t6 t7', 1, 0, 'd1']);
-    eq('«Todo» devuelve el estado sin tocar', C.inSpace(sps, 'todo') === sps, true);
-    var nwP = C.netWorth(vP, '2026-10-31'), nwN = C.netWorth(vN, '2026-10-31'), nwT = C.netWorth(sps, '2026-10-31');
-    eq('Personal: cuentas 698 + BTC 0.01×60000 = 600 + te deben 150 = 1448', [nwP.cash, nwP.invested, nwP.total], [698, 600, 1448]);
-    eq('Negocio: cuentas 1250 + 1080 = 2330 + te deben 80 − debes 40 = 2370', [nwN.cash, nwN.invested, nwN.total], [2330, 0, 2370]);
-    eq('Personal + Negocio = Todo: 1448 + 2370 = 3818', [nwT.total, C.round(nwP.total + nwN.total)], [3818, 3818]);
-    var fP = C.summarizeTransactions(C.flowTransactions(vP), sps.settings.rates), fN = C.summarizeTransactions(C.flowTransactions(vN), sps.settings.rates);
-    eq('Flujo personal: ingresos 300, gastos 100 (los retiros/aportes no son ingreso ni gasto)', [fP.income, fP.expense], [300, 100]);
-    eq('Flujo negocio: ingresos 50 + ganancia de cambio 30 = 80; gastos 20 + comisión de t7 (50−48) 2 = 22', [fN.income, fN.expense], [80, 22]);
-    var br = C.businessResult(sps, { from: '2026-10-01', to: '2026-10-31' });
-    eq('Resultado del negocio: cambios 30 + ingresos 50 − gastos 22 = 58 · retiros 200+50 = 250 · aportes 100 · 1 cambio',
-      [br.fx, br.income, br.expense, br.result, br.withdrawals, br.contributions, br.exchanges], [30, 50, 22, 58, 250, 100, 1]);
-    eq('Fuera del periodo (septiembre): todo en cero', C.businessResult(sps, { from: '2026-09-01', to: '2026-09-30' }).result, 0);
-    var serN = C.netWorthSeries(vN, ['2026-10-05', '2026-10-31'], { today: '2026-10-31' });
-    eq('Evolución del negocio: 5 oct = N1 500−20+50 + N2 2000 = 2530 (ignora el registro diario de «Todo»); hoy 2370',
-      serN.map(function (x) { return x.total; }), [2530, 2370]);
-    eq('En «Todo» el registro diario sí se usa (1 + 2 + 3 = 6)', C.netWorthSeries(sps, ['2026-10-05'], { today: '2026-10-31' })[0].total, 6);
-
     section('Migración de datos v1 → v2');
     var v1 = { version: 1, settings: { baseCurrency: 'USD', rates: { USD: 1, EUR: 1.1 } }, categories: [], methods: [],
       transactions: [{ id: 't1', type: 'ingreso', amount: 10, currency: 'USD', date: '2026-01-01' }, { id: 't2', type: 'egreso', amount: 5, currency: 'EUR', date: '2026-01-02' }],

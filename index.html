@@ -63,22 +63,13 @@
 
   <main>
     <div id="legacy-banner" class="legacy-banner hidden"></div>
-    <!-- Selector Personal / Negocio (aparece cuando alguna cuenta es del negocio) -->
-    <div class="space-bar hidden" id="space-bar">
-      <div class="seg seg-3 seg-sm" role="radiogroup" aria-label="Ver dinero">
-        <input type="radio" name="space" id="sp-todo" value="todo" checked><label for="sp-todo">Todo</label>
-        <input type="radio" name="space" id="sp-personal" value="personal"><label for="sp-personal">Personal</label>
-        <input type="radio" name="space" id="sp-negocio" value="negocio"><label for="sp-negocio">Negocio</label>
-      </div>
-    </div>
     <!-- ================= INICIO ================= -->
     <section id="view-inicio" class="view">
       <div id="warnings"></div>
       <div id="backup-reminder"></div>
-      <div id="space-setup"></div>
 
       <div class="hero">
-        <div class="eyebrow" id="hero-eyebrow">¿Cuánto tengo?</div>
+        <div class="eyebrow">¿Cuánto tengo?</div>
         <div class="hero-value" id="hero-total">—</div>
         <div class="hero-split">
           <button type="button" class="split-item" data-goto="cuentas">
@@ -89,14 +80,6 @@
           </button>
         </div>
         <div class="hero-third hidden" id="hero-third"></div>
-        <div class="hero-third hidden" id="hero-spaces"></div>
-      </div>
-
-      <div class="card hidden" id="biz-card">
-        <div class="card-head"><h2>Resultado del negocio · <span id="biz-month"></span></h2><button type="button" class="link" data-goto="cuentas/cambios">Cambios</button></div>
-        <div class="tile-value" id="biz-result">—</div>
-        <div class="tile-rows" id="biz-rows"></div>
-        <p class="hint" style="margin-bottom:0">Los retiros y aportes del dueño (transferencias entre Personal y Negocio) no cuentan como gasto ni ingreso del negocio.</p>
       </div>
 
       <div class="tiles">
@@ -211,8 +194,7 @@
             <select name="kind"></select>
           </label>
           <label>Moneda<select name="currency"></select></label>
-          <label>Saldo inicial<input name="initialBalance" type="number" inputmode="decimal" step="any" placeholder="0.00"></label>
-          <label>Espacio<select name="space"><option value="personal">Personal</option><option value="negocio">Negocio</option></select></label>
+          <label class="span2">Saldo inicial<input name="initialBalance" type="number" inputmode="decimal" step="any" placeholder="0.00"></label>
         </div>
         <p class="hint">El saldo inicial es lo que había en la cuenta antes de empezar a registrar. Luego el saldo se calcula solo.</p>
         <div class="actions">
@@ -267,7 +249,6 @@
             <label>Fecha<input name="date" type="date" required></label>
             <label>Vence <span class="muted">(opcional)</span><input name="dueDate" type="date"></label>
             <label class="span2"><span id="debt-acc-label">¿Le prestaste dinero? Salió de</span><select name="accountId"></select></label>
-            <label class="span2">Espacio<select name="space"><option value="">Según la cuenta</option><option value="personal">Personal</option><option value="negocio">Negocio</option></select></label>
             <label class="span2">Nota<input name="note" maxlength="140" placeholder="Opcional"></label>
           </div>
           <p class="hint" id="debt-hint"></p>

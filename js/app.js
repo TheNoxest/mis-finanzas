@@ -31,8 +31,6 @@
   function uiPrefs() { try { return JSON.parse(localStorage.getItem(UI_KEY)) || {}; } catch (e) { return {}; } }
   function setUiPref(k, v) { var p = uiPrefs(); p[k] = v; try { localStorage.setItem(UI_KEY, JSON.stringify(p)); } catch (e) { /* sin almacenamiento */ } }
   var privacy = !!(uiPrefs().privacyOnOpen || uiPrefs().privacy);
-  // Espacio que se está viendo: 'todo' | 'personal' | 'negocio' (por dispositivo, no se sincroniza)
-  var space = ['personal', 'negocio'].indexOf(uiPrefs().space) !== -1 ? uiPrefs().space : 'todo';
   var MASK = '••••';
   function fmtMoney(v, cur) {
     if (v === null || v === undefined || isNaN(v)) return '—';
@@ -92,13 +90,7 @@
     var c = byId(state.categories, id); return c ? c.name : 'Sin categoría';
   }
   /** Movimientos para informes: los tuyos + ganancia de cambios de divisas completados. */
-  function flows() { return C.flowTransactions(vs()); }
-  /** ¿Alguna cuenta es del negocio? Si no, no hay nada que separar. */
-  function hasBusiness() { return state.accounts.some(function (a) { return a.space === 'negocio'; }); }
-  function curSpace() { return hasBusiness() ? space : 'todo'; }
-  /** Estado visto desde el espacio elegido (Todo = el estado completo). */
-  function vs() { return C.inSpace(state, curSpace()); }
-  var SPACE_LABEL = { todo: 'Todo', personal: 'Personal', negocio: 'Negocio' };
+  function flows() { return C.flowTransactions(state); }
   function methodName(id) { var m = byId(state.methods, id); return m ? m.name : ''; }
   function account(id) { return byId(state.accounts, id); }
   function accName(id) { var a = account(id); return a ? a.name : 'Cuenta eliminada'; }
@@ -194,7 +186,6 @@
     closeAsset();
     if (parts[0] === 'cuentas') { accTab = ['cobrar', 'pagar', 'cambios'].indexOf(parts[1]) !== -1 ? parts[1] : 'cuentas'; name = 'cuentas'; }
     if (VIEWS.indexOf(name) === -1) name = 'inicio';
-    document.body.dataset.view = name;
     $$('.view').forEach(function (v) { v.classList.toggle('active', v.id === 'view-' + name); });
     $$('#tabs button').forEach(function (b) { b.classList.toggle('active', b.dataset.view === name); });
     $('#settings-btn').classList.toggle('active', name === 'ajustes');
@@ -286,20 +277,9 @@
   // ================================================================ inicio
   function renderHome() {
     var b = base();
-    var nw = C.netWorth(vs(), S.today());
+    var nw = C.netWorth(state, S.today());
     var pf = nw.portfolio;
     var ym = thisMonth();
-    var sp = curSpace();
-    $('#hero-eyebrow').textContent = sp === 'negocio' ? 'Capital del negocio' : sp === 'personal' ? 'Mi patrimonio personal' : '¿Cuánto tengo?';
-    // En «Todo», repartir el total entre Personal y Negocio (tocar = ver ese espacio)
-    if (sp === 'todo' && hasBusiness()) {
-      var tP = C.netWorth(C.inSpace(state, 'personal'), S.today()).total, tN = C.netWorth(C.inSpace(state, 'negocio'), S.today()).total;
-      $('#hero-spaces').innerHTML = '<button type="button" data-space="personal">Personal <b>' + fmtMoney(tP, b) + '</b></button><span aria-hidden="true">·</span>' +
-        '<button type="button" data-space="negocio">Negocio <b>' + fmtMoney(tN, b) + '</b></button>';
-      $('#hero-spaces').classList.remove('hidden');
-    } else $('#hero-spaces').classList.add('hidden');
-    renderBizCard();
-    renderSpaceSetup();
     var month = C.summarizeTransactions(flows(), rates(), monthRange(ym));
     var top = C.totalsByCategory(flows(), rates(), 'egreso', monthRange(ym))[0];
 
@@ -349,63 +329,6 @@
 
   function kv(k, v) { return '<div class="kv"><span>' + k + '</span><span>' + v + '</span></div>'; }
 
-  // ================================================================ personal / negocio
-  function renderSpaceBar() {
-    var on = hasBusiness();
-    $('#space-bar').classList.toggle('hidden', !on);
-    var r = $('#sp-' + curSpace()); if (r) r.checked = true;
-  }
-  function setSpace(v) {
-    space = ['personal', 'negocio'].indexOf(v) !== -1 ? v : 'todo';
-    setUiPref('space', space);
-    renderAll();
-  }
-
-  /** Tarjeta «Resultado del negocio» del mes (en Todo y en Negocio). */
-  function renderBizCard() {
-    var card = $('#biz-card');
-    if (!hasBusiness() || curSpace() === 'personal') { card.classList.add('hidden'); return; }
-    card.classList.remove('hidden');
-    var b = base(), ym = thisMonth(), r = C.businessResult(state, monthRange(ym));
-    $('#biz-month').textContent = new Date(ym + '-15T12:00').toLocaleDateString(LOCALE, { month: 'long' });
-    $('#biz-result').innerHTML = '<span class="' + trend(r.result) + '">' + fmtSigned(r.result, b) + '</span>';
-    $('#biz-rows').innerHTML =
-      kv('Ganancia de cambios <span class="muted">(' + r.exchanges + ')</span>', '<span class="' + trend(r.fx) + '">' + fmtSigned(r.fx, b) + '</span>') +
-      kv('Otros ingresos del negocio', '+' + fmtMoney(r.income, b)) +
-      kv('Gastos del negocio', '−' + fmtMoney(r.expense, b)) +
-      kv('Retiros del dueño', fmtMoney(r.withdrawals, b)) +
-      kv('Aportes del dueño', fmtMoney(r.contributions, b));
-  }
-
-  /** Asistente (una vez): «¿Qué cuentas son del negocio?». */
-  function renderSpaceSetup() {
-    var box = $('#space-setup');
-    if (state.settings.spaceSetupDone || hasBusiness() || state.accounts.length < 2) { box.innerHTML = ''; return; }
-    var bal = {};
-    C.accountBalances(state).forEach(function (a) { bal[a.account.id] = a; });
-    box.innerHTML = '<div class="card space-setup"><h2>Nuevo: separa lo Personal del Negocio</h2>' +
-      '<p class="hint" style="margin-top:0">Marca las cuentas que usas para tu negocio de cambios. Verás aparte cuánto gana el negocio y cuánto es tuyo. Puedes cambiarlo después al editar cada cuenta.</p>' +
-      state.accounts.map(function (a) {
-        var x = bal[a.id];
-        return '<label class="acc-pick"><input type="checkbox" name="biz-acc" value="' + a.id + '">' +
-          '<span class="main"><b>' + esc(a.name) + '</b><div class="sub">' + esc(S.ACCOUNT_KINDS[a.kind] || '') + ' · ' + esc(a.currency) + '</div></span>' +
-          '<span class="amt">' + (x ? fmtMoney(x.balance, a.currency) : '') + '</span></label>';
-      }).join('') +
-      '<div class="actions"><button type="button" class="ghost" data-action="space-setup-skip">Ahora no</button>' +
-      '<button type="button" class="primary" data-action="space-setup-save">Guardar</button></div></div>';
-  }
-  function saveSpaceSetup() {
-    var ids = $$('#space-setup input[name="biz-acc"]:checked').map(function (i) { return i.value; });
-    if (!ids.length) { toast('Marca al menos una cuenta del negocio, o pulsa «Ahora no»'); return; }
-    safetyBackup('antes de separar Personal y Negocio').then(function () {
-      state.accounts.forEach(function (a) { a.space = ids.indexOf(a.id) !== -1 ? 'negocio' : 'personal'; });
-      state.settings.spaceSetupDone = true;
-      space = 'todo'; setUiPref('space', 'todo');
-      persist();
-      toast(ids.length + ' cuenta(s) en Negocio. Usa el selector de arriba para ver cada parte.');
-    });
-  }
-
   function renderWarnings(pf) {
     var warn = [];
     var all = C.summarizeTransactions(flows(), rates());
@@ -419,7 +342,7 @@
 
   // ================================================================ movimientos
   function sortedTx() {
-    return vs().transactions.slice().sort(function (a, b) {
+    return state.transactions.slice().sort(function (a, b) {
       return a.date < b.date ? 1 : a.date > b.date ? -1 : (b.createdAt || 0) - (a.createdAt || 0);
     });
   }
@@ -428,8 +351,7 @@
     var b = base(), right, title, sub, av;
     if (t.type === 'transferencia') {
       av = '<span class="avatar tr">' + icon('i-swap') + '</span>';
-      var own = C.ownerMove(t, C.accountSpaces(state.accounts));
-      title = own === 'retiro' ? 'Retiro del dueño' : own === 'aporte' ? 'Aporte del dueño' : 'Transferencia';
+      title = 'Transferencia';
       sub = fmtDate(t.date) + ' · ' + esc(accName(t.fromAccountId)) + ' → ' + esc(accName(t.toAccountId));
       var fee = C.transferFee(t);
       right = fmtMoney(t.amount, t.currency) +
@@ -507,11 +429,6 @@
         txt = '≈ ' + fmtMoney(C.toBase(amt, from.currency, rates()), base()) + ' (tasa ' + fmtNum(rates()[from.currency], 0, 10) + ')';
       }
       if (isTr && from.id === (to && to.id)) txt = 'Elige dos cuentas distintas.';
-      else if (isTr && to) {
-        var own = C.ownerMove({ type: 'transferencia', fromAccountId: from.id, toAccountId: to.id }, C.accountSpaces(state.accounts));
-        if (own) txt = (own === 'retiro' ? 'Retiro del dueño: pasa dinero del Negocio a lo Personal.' : 'Aporte del dueño: pasa dinero de lo Personal al Negocio.') +
-          ' No cuenta como gasto ni ingreso del negocio. ' + txt;
-      }
     }
     $('#tx-preview').textContent = txt;
   }
@@ -603,9 +520,8 @@
   function renderAccounts() {
     var b = base();
     var ym = thisMonth();
-    var list = C.accountBalances(vs(), monthRange(ym));
+    var list = C.accountBalances(state, monthRange(ym));
     var total = C.sum(list.map(function (a) { return isNaN(a.balanceBase) ? 0 : a.balanceBase; }));
-    $('#acc-panel-cuentas .hero .eyebrow').textContent = 'Total en cuentas' + (curSpace() !== 'todo' ? ' · ' + SPACE_LABEL[curSpace()] : '');
     var month = C.summarizeTransactions(flows(), rates(), monthRange(ym));
     $('#acc-total').textContent = fmtMoney(total, b);
     $('#acc-month').innerHTML = 'Este mes: <span class="up">+' + fmtMoney(month.income, b) + '</span> ingresos · −' + fmtMoney(month.expense, b) + ' gastos';
@@ -618,8 +534,7 @@
           '<span>Activos <b>' + fmtMoney(h.portfolio.value, b) + '</b> · Total <b>' + fmtMoney(h.total, b) + '</b></span></div>' : '';
       return '<div class="acc-card clickable-card" data-open-account="' + acc.id + '" tabindex="0" role="button" aria-label="Abrir ' + esc(acc.name) + '">' +
         '<div class="acc-top"><span class="avatar">' + icon(KIND_ICONS[acc.kind] || 'i-wallet') + '</span>' +
-        '<div class="main"><div class="acc-name">' + esc(acc.name) + (hasBusiness() && curSpace() === 'todo' && acc.space === 'negocio' ? '<span class="tag space-tag">Negocio</span>' : '') +
-        '</div><div class="acc-kind">' + esc(S.ACCOUNT_KINDS[acc.kind] || '') + ' · ' + esc(acc.currency) + '</div></div></div>' +
+        '<div class="main"><div class="acc-name">' + esc(acc.name) + '</div><div class="acc-kind">' + esc(S.ACCOUNT_KINDS[acc.kind] || '') + ' · ' + esc(acc.currency) + '</div></div></div>' +
         '<div class="acc-balance ' + (a.balance < 0 ? 'down' : '') + '">' + fmtMoney(a.balance, acc.currency) +
         (acc.currency !== b ? '<small>≈ ' + fmtMoney(a.balanceBase, b) + '</small>' : '<small>Saldo actual</small>') + '</div>' +
         assets +
@@ -635,7 +550,6 @@
     var f = $('#acc-form');
     f.reset(); f.editId.value = '';
     f.currency.value = base(); f.currency.disabled = false;
-    f.space.value = curSpace() === 'negocio' ? 'negocio' : 'personal';
     $('#acc-form-title').textContent = 'Nueva cuenta';
     $('[data-action="cancel-acc"]').classList.add('hidden');
     $('[data-action="delete-acc"]').classList.add('hidden');
@@ -647,7 +561,6 @@
     var f = $('#acc-form');
     f.editId.value = a.id; f.label.value = a.name; f.kind.value = a.kind; f.currency.value = a.currency;
     f.initialBalance.value = a.initialBalance || '';
-    f.space.value = C.spaceOfAccount(a);
     var used = accountInUse(a.id);
     f.currency.disabled = used; // no se cambia la moneda de una cuenta con movimientos
     $('#acc-form-title').textContent = 'Editar cuenta';
@@ -667,7 +580,7 @@
     if (!name) { toast('Ponle un nombre a la cuenta'); f.label.focus(); return; }
     var initial = f.initialBalance.value === '' ? 0 : parseFloat(f.initialBalance.value);
     if (!isFinite(initial)) { toast('Saldo inicial inválido'); return; }
-    var data = { name: name, kind: f.kind.value, currency: f.currency.value, initialBalance: C.round(initial, 2), space: f.space.value === 'negocio' ? 'negocio' : 'personal' };
+    var data = { name: name, kind: f.kind.value, currency: f.currency.value, initialBalance: C.round(initial, 2) };
     // Moneda nueva: se añade y se conecta a su tasa antes de guardar
     if (!(Number(rates()[data.currency]) > 0) && data.currency !== base()) {
       toast('Conectando la tasa de ' + data.currency + '…');
@@ -694,7 +607,7 @@
   // ================================================================ inversiones
   function renderPortfolio() {
     var b = base();
-    var res = C.buildPositions(vs().investments, rates());
+    var res = C.buildPositions(state.investments, rates());
     var pf = C.valuePortfolio(res.positions, state.prices, rates());
 
     $('#pf-value').textContent = fmtMoney(pf.value, b);
@@ -1272,7 +1185,7 @@
     // --- Evolución del patrimonio ---
     // Punto base: el día anterior al inicio, para que el cambio incluya todo lo ocurrido en el rango
     var dates = [C.addDays(r.from, -1)].concat(C.seriesDates(r.from, r.to));
-    var nw = C.netWorthSeries(vs(), dates, { today: S.today(), accountId: acc, assetType: asset });
+    var nw = C.netWorthSeries(state, dates, { today: S.today(), accountId: acc, assetType: asset });
     var last = nw[nw.length - 1], first = nw[0];
     var series = [{ label: acc ? accName(acc) : 'Patrimonio', color: COLORS.total, values: nw.map(function (x) { return x.total; }), area: true, width: 2.5 }];
     if (!acc) {
@@ -1299,8 +1212,7 @@
       tableRows.map(function (x) { return [fmtLong(x.date), fmtMoney(x.cash, b), fmtMoney(x.invested, b), fmtMoney(x.total, b), srcLabel[x.source]]; }));
 
     // --- Rendimiento por activo ---
-    var spOps = vs().investments;
-    var ops = asset ? spOps.filter(function (o) { return o.assetType === asset; }) : spOps;
+    var ops = asset ? state.investments.filter(function (o) { return o.assetType === asset; }) : state.investments;
     var pos = C.buildPositions(ops, rates()).positions;
     var pf = C.valuePortfolio(pos, state.prices, rates());
     $('#perf-table').innerHTML = pf.rows.length ? table(['Activo', 'Valor', 'Costo', 'G/P', 'G/P %', 'Peso'],
@@ -1913,7 +1825,7 @@
   function renderDebts() {
     if (accTab !== 'cobrar' && accTab !== 'pagar') return;
     var kind = accTab, b = base(), today = S.today();
-    var tp = C.thirdParty(vs(), today);
+    var tp = C.thirdParty(state, today);
     var all = kind === 'cobrar' ? tp.receivables : tp.payables;
     var open = all.filter(function (i) { return i.status !== 'pagada'; });
     var overdue = open.filter(function (i) { return i.overdue; });
@@ -1966,7 +1878,6 @@
     fillSelect(f.currency, currencyOptions(), state.settings.last.debtCurrency || base());
     f.currency.disabled = false;
     f.date.value = S.today();
-    f.space.value = curSpace() === 'negocio' ? 'negocio' : '';
     renderDebtAccountSelect();
     debtLabels(f.dataset.kind);
     $('[data-action="cancel-debt"]').classList.add('hidden');
@@ -1984,7 +1895,6 @@
     f.currency.disabled = (d.payments || []).length > 0; // con abonos no se cambia la moneda
     f.date.value = d.date; f.dueDate.value = d.dueDate || ''; f.note.value = d.note || '';
     renderDebtAccountSelect(); f.accountId.value = d.accountId || '';
-    f.space.value = d.space === 'personal' || d.space === 'negocio' ? d.space : '';
     debtLabels(d.kind);
     $('[data-action="cancel-debt"]').classList.remove('hidden');
     $('[data-action="delete-debt"]').classList.remove('hidden');
@@ -2032,8 +1942,7 @@
     if (existing && amount < C.debtBalance(existing).paid) { toast('El monto no puede ser menor a lo ya abonado'); return; }
     var data = { kind: kind, person: f.person.value.trim(), concept: f.concept.value.trim(), amount: C.round(amount, 2),
       currency: existing && (existing.payments || []).length ? existing.currency : f.currency.value,
-      date: f.date.value, dueDate: f.dueDate.value || null, accountId: f.accountId.value || null, note: f.note.value.trim(),
-      space: f.space.value === 'personal' || f.space.value === 'negocio' ? f.space.value : null };
+      date: f.date.value, dueDate: f.dueDate.value || null, accountId: f.accountId.value || null, note: f.note.value.trim() };
     invalidateSnapshots(existing && existing.date < data.date ? existing.date : data.date);
     if (existing) { Object.assign(existing, data); toast('Actualizado'); }
     else {
@@ -2842,7 +2751,6 @@
 
   // ================================================================ render
   function renderAll() {
-    renderSpaceBar();
     renderSelects();
     renderHome();
     renderTxList();
@@ -2867,8 +2775,6 @@
       var b = e.target.closest('button[data-view]'); if (b) showView(b.dataset.view);
     });
     window.addEventListener('hashchange', function () { showView(location.hash.slice(1)); });
-
-    $$('#space-bar input[name="space"]').forEach(function (r) { r.addEventListener('change', function () { setSpace(r.value); }); });
 
     var tf = $('#tx-form');
     tf.addEventListener('submit', onTxSubmit);
@@ -3101,12 +3007,6 @@
         setTimeout(function () { tfq.amount.focus(); }, 0);
       } else if (d.action === 'quick-exchange') { closeQuick(); showView('cuentas/cambios'); setTimeout(function () { $('#fx-form').amount.focus(); }, 0); }
       else if (d.action === 'toggle-privacy') togglePrivacy();
-      else if (d.space) setSpace(d.space);
-      else if (d.action === 'space-setup-save') saveSpaceSetup();
-      else if (d.action === 'space-setup-skip') {
-        state.settings.spaceSetupDone = true; persist();
-        toast('Cuando quieras, edita una cuenta y elige «Espacio: Negocio»');
-      }
       else if (d.action === 'backup-local-now') safetyBackup('manual').then(function () { renderVersionsCard(); toast('Copia guardada en este dispositivo'); });
       else if (d.restoreLocal) restoreFrom('local', d.restoreLocal);
       else if (d.restoreCloud) restoreFrom('cloud', d.restoreCloud);
