@@ -488,7 +488,7 @@ dialog::backdrop { background: rgba(0, 0, 0, .35); }
 .cloud-dot.ok { background: #0ca30c; }
 .cloud-dot.pending, .cloud-dot.syncing { background: #2a78d6; }
 .cloud-dot.offline { background: #fab219; }
-.cloud-dot.error { background: #d03b3b; }
+.cloud-dot.error, .cloud-dot.login { background: #d03b3b; }
 .sync-form { display: grid; gap: 10px; }
 .sync-status { display: flex; align-items: center; gap: 8px; font-size: .9rem; margin-bottom: 10px; flex-wrap: wrap; }
 .sync-status .live-dot { width: 10px; height: 10px; }

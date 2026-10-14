@@ -447,6 +447,50 @@
       eq('Con otra contraseña no se puede descifrar', failed, true);
       var box2 = await K.encrypt(secret, key);
       eq('Cada cifrado usa un IV distinto', box.iv !== box2.iv, true);
+
+      // Sesión (refresh token). Se usa la misma clave de localStorage que la app: se guarda y se restaura.
+      section('Sesión de la nube: no pisar ni reutilizar el refresh token');
+      var A = Sync._auth, KEY = 'misFinanzas.sync', saved = localStorage.getItem(KEY), realFetch = window.fetch;
+      try {
+        eq('«Invalid Refresh Token: Refresh Token Not Found» (400) = sesión muerta; sin conexión, 500 o contraseña mala, no',
+          [A.deadSession({ status: 400, message: 'Invalid Refresh Token: Refresh Token Not Found' }), A.deadSession({ offline: true, message: 'refresh token' }),
+           A.deadSession({ status: 500, message: 'Invalid Refresh Token' }), A.deadSession({ status: 400, message: 'Correo o contraseña incorrectos' })],
+          [true, false, false, false]);
+        var s1 = { access_token: 'a1', refresh_token: 'r1', expires_at: 1000, user: { id: 'u', email: 'e@x' } };
+        var s2 = { access_token: 'a2', refresh_token: 'r2', expires_at: 2000, user: { id: 'u', email: 'e@x' } };
+        localStorage.setItem(KEY, JSON.stringify({ enabled: true, session: s2 }));
+        A.writeCfg({ enabled: true, session: s1, lastSync: 5 });
+        var st = JSON.parse(localStorage.getItem(KEY));
+        eq('Otra pestaña con la sesión vieja (r1) guarda: se conserva la nueva (r2) y el resto de sus cambios', [st.session.refresh_token, st.lastSync], ['r2', 5]);
+        A.writeCfg({ enabled: true });
+        eq('Guardar sin sesión no la borra (solo «cerrar sesión» puede)', JSON.parse(localStorage.getItem(KEY)).session.refresh_token, 'r2');
+        A.writeCfg({ enabled: true }, true);
+        eq('Cerrar sesión sí la borra', JSON.parse(localStorage.getItem(KEY)).session, undefined);
+
+        // Renovación rechazada por Supabase → se olvida la sesión, se mantiene la sincronización y se pide entrar
+        var calls = 0;
+        window.fetch = function () { calls++; return Promise.resolve(new Response(JSON.stringify({ code: 400, error_code: 'refresh_token_not_found', msg: 'Invalid Refresh Token: Refresh Token Not Found' }), { status: 400 })); };
+        localStorage.setItem(KEY, JSON.stringify({ enabled: true, url: 'https://x.supabase.co', anonKey: 'k', session: s1 }));
+        var stale = JSON.parse(localStorage.getItem(KEY)), err = null;
+        try { await A.ensureSession(stale); } catch (e) { err = e; }
+        var after = JSON.parse(localStorage.getItem(KEY));
+        eq('Sesión rechazada: aviso «vuelve a iniciar sesión», sincronización sigue activa, correo recordado',
+          [!!(err && err.needLogin), after.session, after.enabled, after.lastUser.email, after.pending], [true, undefined, true, 'e@x', true]);
+        A.writeCfg(stale);
+        eq('Una copia vieja en memoria no revive la sesión muerta (r1)', JSON.parse(localStorage.getItem(KEY)).session, undefined);
+
+        // Dos llamadas a la vez con la sesión vencida → una sola renovación
+        calls = 0;
+        window.fetch = function () { calls++; return new Promise(function (res) { setTimeout(function () {
+          res(new Response(JSON.stringify({ access_token: 'a3', refresh_token: 'r3', expires_in: 3600, user: { id: 'u', email: 'e@x' } }), { status: 200 })); }, 30); }); };
+        localStorage.setItem(KEY, JSON.stringify({ enabled: true, url: 'https://x.supabase.co', anonKey: 'k', session: s1 }));
+        var c1 = JSON.parse(localStorage.getItem(KEY)), c2 = JSON.parse(localStorage.getItem(KEY));
+        await Promise.all([A.ensureSession(c1), A.ensureSession(c2)]);
+        eq('Dos renovaciones simultáneas = 1 sola llamada y ambas usan r3', [calls, c1.session.refresh_token, c2.session.refresh_token], [1, 'r3', 'r3']);
+      } finally {
+        window.fetch = realFetch;
+        if (saved === null) localStorage.removeItem(KEY); else localStorage.setItem(KEY, saved);
+      }
       done();
     })();
   })();

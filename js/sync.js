@@ -30,7 +30,27 @@
     return out;
   }
   function readCfg() { try { return JSON.parse(root.localStorage.getItem(CFG_KEY)) || {}; } catch (e) { return {}; } }
-  function writeCfg(c) { root.localStorage.setItem(CFG_KEY, JSON.stringify(c)); }
+  /**
+   * Guarda la configuración SIN pisar una sesión más nueva: otra pestaña (o una llamada en paralelo) puede haber
+   * renovado la sesión mientras esta tenía la vieja en memoria. Volver a guardar el refresh token viejo hacía que
+   * Supabase detectara su reutilización y cerrara la sesión («Invalid Refresh Token»).
+   * dropSession = true solo al cerrar sesión o cuando la sesión ya no vale.
+   */
+  function writeCfg(c, dropSession) {
+    var cur = readCfg();
+    if (!dropSession && cur.session && (!c.session || (cur.session.expires_at || 0) > (c.session.expires_at || 0))) c.session = cur.session;
+    // Una sesión que Supabase ya rechazó no puede «revivir» desde una copia vieja en memoria
+    if (cur.deadRefresh && !c.deadRefresh) c.deadRefresh = cur.deadRefresh;
+    if (cur.lastUser && !c.lastUser) c.lastUser = cur.lastUser;
+    if (c.session && c.deadRefresh && c.session.refresh_token === c.deadRefresh) delete c.session;
+    root.localStorage.setItem(CFG_KEY, JSON.stringify(c));
+  }
+  /** ¿Supabase rechazó el refresh token? (sesión cerrada, caducada o revocada) */
+  function deadSession(e) {
+    return !!e && !e.offline && (e.status === 400 || e.status === 401 || e.status === 403) &&
+      /refresh.?token|invalid_grant|session.*(not found|expired)/i.test(e.message || '');
+  }
+  var NEED_LOGIN = 'Tu sesión se cerró: vuelve a iniciar sesión para seguir sincronizando. Tus datos están a salvo en este dispositivo.';
 
   // ---------------------------------------------------------------- cifrado
   async function deriveKey(passphrase, saltB64) {
@@ -104,11 +124,42 @@
     cfg.session = { access_token: s.access_token, refresh_token: s.refresh_token, expires_at: Date.now() + (s.expires_in || 3600) * 1000, user: { id: s.user.id, email: s.user.email } };
     writeCfg(cfg);
   }
+  /** Toma la sesión guardada si es más nueva que la que esta llamada tiene en memoria. */
+  function adoptStoredSession(cfg) {
+    var s = readCfg().session;
+    if (s && (!cfg.session || (s.expires_at || 0) > (cfg.session.expires_at || 0))) cfg.session = s;
+  }
+  var refreshing = null; // una sola renovación a la vez dentro de esta pestaña
   async function ensureSession(cfg) {
-    if (!cfg.session) throw new Error('Inicia sesión');
+    adoptStoredSession(cfg);
+    if (!cfg.session) { var ne = new Error(NEED_LOGIN); ne.needLogin = true; throw ne; }
     if (Date.now() < cfg.session.expires_at - 60000) return;
-    var s = await call(cfg, '/auth/v1/token?grant_type=refresh_token', { method: 'POST', auth: false, body: { refresh_token: cfg.session.refresh_token } });
-    saveSession(cfg, s);
+    if (!refreshing) {
+      var run = async function () {
+        var c = readCfg();
+        // Otra pestaña pudo renovarla mientras esperábamos el candado
+        if (c.session && Date.now() < c.session.expires_at - 60000) return;
+        if (!c.session) { var ne2 = new Error(NEED_LOGIN); ne2.needLogin = true; throw ne2; }
+        try {
+          var s = await call(c, '/auth/v1/token?grant_type=refresh_token', { method: 'POST', auth: false, body: { refresh_token: c.session.refresh_token } });
+          saveSession(c, s);
+        } catch (e) {
+          if (!deadSession(e)) throw e;
+          // La sesión ya no vale: se olvida (los datos y la clave de cifrado se quedan) y se pide entrar de nuevo
+          var d = readCfg();
+          if (d.session && d.session.refresh_token === c.session.refresh_token) {
+            d.lastUser = d.session.user; d.deadRefresh = d.session.refresh_token; delete d.session; d.pending = true; writeCfg(d, true);
+          }
+          var ne3 = new Error(NEED_LOGIN); ne3.needLogin = true; throw ne3;
+        }
+      };
+      // Candado entre pestañas (si el navegador lo permite) para no gastar el mismo refresh token dos veces
+      refreshing = (root.navigator && navigator.locks ? navigator.locks.request('misFinanzas-auth', run) : run())
+        .finally(function () { refreshing = null; });
+    }
+    await refreshing;
+    adoptStoredSession(cfg);
+    if (!cfg.session) { var ne4 = new Error(NEED_LOGIN); ne4.needLogin = true; throw ne4; }
   }
 
   // ---------------------------------------------------------------- combinación
@@ -171,7 +222,8 @@
   /** Sincroniza ahora: baja, combina, sube. Seguro de llamar muchas veces. */
   async function syncNow() {
     var cfg = readCfg();
-    if (!cfg.enabled || !cfg.session) return;
+    if (!cfg.enabled) return;
+    if (!cfg.session) { setStatus('login', { error: NEED_LOGIN, at: cfg.lastSync || null }); return; }
     if (running) { again = true; return; }
     running = true;
     setStatus('syncing');
@@ -208,7 +260,7 @@
       throw new Error('Demasiados cambios simultáneos; se reintentará');
     } catch (e) {
       var c2 = readCfg(); c2.pending = true; writeCfg(c2);
-      setStatus(e.offline ? 'offline' : 'error', { error: e.message, at: c2.lastSync });
+      setStatus(e.needLogin ? 'login' : e.offline ? 'offline' : 'error', { error: e.message, at: c2.lastSync });
     } finally {
       running = false;
       if (again) { again = false; schedule(1500); }
@@ -311,13 +363,20 @@
   async function signIn(email, password) {
     var cfg = readCfg();
     var r = await call(cfg, '/auth/v1/token?grant_type=password', { method: 'POST', auth: false, body: { email: email, password: password } });
+    // Otra cuenta distinta de la que estaba conectada: la clave de cifrado guardada no le sirve
+    var other = cfg.enabled && cfg.lastUser && r.user && cfg.lastUser.id !== r.user.id;
+    if (other) { cfg.enabled = false; await keyDel(); }
+    delete cfg.lastUser;
     saveSession(cfg, r);
+    // Si la sincronización ya estaba activa (sesión caducada), sigue sola sin pedir la contraseña de cifrado
+    if (cfg.enabled) { setStatus('pending', { at: cfg.lastSync || null }); schedule(300); }
   }
   async function signOut() {
     var cfg = readCfg();
-    try { if (cfg.session) await call(cfg, '/auth/v1/logout', { method: 'POST' }); } catch (e) { /* sin conexión: igual se cierra local */ }
-    delete cfg.session; cfg.enabled = false; delete cfg.lastSync; delete cfg.pending;
-    writeCfg(cfg); await keyDel();
+    // scope=local: cierra solo ESTE dispositivo (sin «local» Supabase cerraba también el PC/móvil)
+    try { if (cfg.session) await call(cfg, '/auth/v1/logout?scope=local', { method: 'POST' }); } catch (e) { /* sin conexión: igual se cierra local */ }
+    delete cfg.session; delete cfg.lastUser; delete cfg.deadRefresh; cfg.enabled = false; delete cfg.lastSync; delete cfg.pending;
+    writeCfg(cfg, true); await keyDel();
     setStatus('off');
   }
   /** ¿Ya existe una bóveda en la nube para esta cuenta? */
@@ -364,7 +423,7 @@
     if ((!cfg.url || !cfg.anonKey) && root.APP_CONFIG && root.APP_CONFIG.supabaseUrl) {
       cfg.url = root.APP_CONFIG.supabaseUrl; cfg.anonKey = root.APP_CONFIG.supabaseAnonKey; writeCfg(cfg);
     }
-    if (cfg.enabled) setStatus(cfg.pending ? 'pending' : 'ok', { at: cfg.lastSync || null });
+    if (cfg.enabled) setStatus(!cfg.session ? 'login' : cfg.pending ? 'pending' : 'ok', { at: cfg.lastSync || null, error: cfg.session ? null : NEED_LOGIN });
     root.Store.onSave = function () { if (readCfg().enabled) { var c = readCfg(); c.pending = true; writeCfg(c); setStatus('pending', { at: c.lastSync }); schedule(3000); } };
     root.addEventListener('online', function () { schedule(500); });
     document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') schedule(500); });
@@ -379,6 +438,7 @@
     recover: recover, hasAuthRedirect: hasAuthRedirect, handleAuthRedirect: handleAuthRedirect, updatePassword: updatePassword,
     config: readCfg, status: function () { return status; }, onStatus: function (f) { listeners.push(f); },
     // expuestos para pruebas
-    _crypto: { deriveKey: deriveKey, encrypt: encrypt, decrypt: decrypt }
+    _crypto: { deriveKey: deriveKey, encrypt: encrypt, decrypt: decrypt },
+    _auth: { deadSession: deadSession, writeCfg: writeCfg, ensureSession: ensureSession }
   };
 })(this);

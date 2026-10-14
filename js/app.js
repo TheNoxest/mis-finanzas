@@ -2398,7 +2398,7 @@
     var st = Sync.status(), dot = $('#cloud-dot'), cfg = Sync.config();
     dot.classList.toggle('hidden', !cfg.enabled);
     dot.className = 'cloud-dot ' + (cfg.enabled ? st.state : 'hidden');
-    var t = { ok: 'Sincronizado', pending: 'Cambios por subir', syncing: 'Sincronizando…', offline: 'Sin conexión: se sincronizará al volver', error: 'Error de sincronización' };
+    var t = { ok: 'Sincronizado', pending: 'Cambios por subir', syncing: 'Sincronizando…', offline: 'Sin conexión: se sincronizará al volver', error: 'Error de sincronización', login: 'Vuelve a iniciar sesión' };
     $('#settings-btn').title = cfg.enabled ? 'Ajustes · ' + (t[st.state] || '') : 'Ajustes';
   }
 
@@ -2428,10 +2428,16 @@
       return;
     }
     if (!cfg.session) {
-      body.innerHTML = '<p class="hint" style="margin-top:0">Usa el mismo correo en el PC y en el móvil.</p>' +
-        '<form class="sync-form" data-sync-form="auth"><label>Correo<input name="email" type="email" autocomplete="username" required></label>' +
+      // Sincronización activa pero la sesión caducó: solo hace falta entrar otra vez (la clave de cifrado sigue guardada)
+      var relogin = cfg.enabled;
+      var lastEmail = cfg.lastUser && cfg.lastUser.email || '';
+      body.innerHTML = (relogin
+        ? '<p class="warning" style="margin-top:0"><b>Tu sesión se cerró.</b> Inicia sesión otra vez para seguir sincronizando. Tus datos están a salvo en este dispositivo' +
+          (cfg.pending ? ' y los cambios pendientes se subirán al entrar' : '') + '; no tendrás que escribir la contraseña de cifrado.</p>'
+        : '<p class="hint" style="margin-top:0">Usa el mismo correo en el PC y en el móvil.</p>') +
+        '<form class="sync-form" data-sync-form="auth"><label>Correo<input name="email" type="email" autocomplete="username" required value="' + esc(lastEmail) + '"></label>' +
         '<label>Contraseña de la cuenta<input name="password" type="password" autocomplete="current-password" minlength="6" required></label>' +
-        '<div class="actions" style="margin-top:0"><button type="submit" value="signup">Crear cuenta</button><button class="primary" type="submit" value="signin">Iniciar sesión</button></div></form>' +
+        '<div class="actions" style="margin-top:0">' + (relogin ? '' : '<button type="submit" value="signup">Crear cuenta</button>') + '<button class="primary" type="submit" value="signin">Iniciar sesión</button></div></form>' +
         '<div class="btn-row" style="margin-top:8px"><button type="button" class="link small" data-action="sync-forgot">¿Olvidaste la contraseña de la cuenta?</button>' +
         '<button type="button" class="link small" data-action="sync-reset-config">Cambiar proyecto de Supabase</button></div>';
       return;
@@ -2481,7 +2487,11 @@
         if (btn && btn.value === 'signup') {
           var r = await Sync.signUp(f.email.value.trim(), f.password.value);
           if (!r.session) { toast('Cuenta creada. Confirma el correo que te envió Supabase y luego inicia sesión.'); busy(false); return; }
-        } else await Sync.signIn(f.email.value.trim(), f.password.value);
+        } else {
+          var wasOn = Sync.config().enabled;
+          await Sync.signIn(f.email.value.trim(), f.password.value);
+          if (wasOn && Sync.config().enabled) toast('Sesión iniciada: sincronizando…');
+        }
         syncStep = null;
       } else if (kind === 'newpass') {
         if (f.pass.value !== f.pass2.value) throw new Error('Las contraseñas no coinciden');
