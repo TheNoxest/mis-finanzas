@@ -3127,6 +3127,17 @@
         (st.pending > 0 ? ' · pendiente <b>' + fmtMoney(st.pending, st.currency) + '</b>. ' : '. ') +
         '<button type="button" class="link small" data-action="fx-settle" data-id="' + x.id + '">' + (st.pending > 0 ? (st.side === 'in' ? 'Registrar cobro →' : 'Registrar entrega →') : 'Ver registros →') + '</button>' +
         ((x.settlements || []).length ? '<br><span class="small">El estado se calcula con lo cobrado o entregado.</span>' : '');
+      var sideAcc = st.side === 'in' ? x.inAccountId : x.outAccountId;
+      var sets = x.settlements || [];
+      if (sets.length) hint.innerHTML += '<br><span class="small">' + sets.map(function (z) {
+        return (st.side === 'in' ? 'Cobro ' : 'Entrega ') + fmtMoney(z.amount, st.currency) + ' el ' + fmtDate(z.date) + ' · ' + (z.accountId ? esc(accName(z.accountId)) : 'sin cuenta');
+      }).join('<br>') + '</span>';
+      var wrong = sets.filter(function (z) { return z.accountId !== sideAcc; });
+      if (sideAcc && wrong.length) {
+        hint.innerHTML += '<br><b>Ojo:</b> ' + (wrong.length === sets.length ? 'los registros usan' : wrong.length + ' registro(s) usan') + ' otra cuenta que «' +
+          (st.side === 'in' ? 'Entra en' : 'Sale de') + ': ' + esc(accName(sideAcc)) + '». ' +
+          '<button type="button" class="link small" data-action="fx-fix-settle-acc" data-id="' + x.id + '">Usar ' + esc(accName(sideAcc)) + ' en todos</button>';
+      }
       hint.classList.remove('hidden');
     } else hint.classList.add('hidden');
     $('[data-action="cancel-fx"]').classList.remove('hidden');
@@ -3161,9 +3172,21 @@
     invalidateSnapshots(existing && existing.date < data.date ? existing.date : data.date);
     // Con cobros/entregas registrados, el estado sale de lo pendiente (no del selector)
     if (existing && (existing.settlements || []).length) {
-      var probe = Object.assign({}, existing, data, { status: 'completada' });
+      var side = existing.settleSide || (existing.status === 'pendiente_cobro' ? 'in' : 'out');
+      // Si cambiaste la cuenta de ese lado, los registros que usaban la cuenta anterior pasan a la nueva
+      var oldAcc = side === 'in' ? existing.inAccountId : existing.outAccountId, newAcc = side === 'in' ? data.inAccountId : data.outAccountId;
+      if (newAcc && oldAcc !== newAcc) existing.settlements.forEach(function (z) { if (!z.accountId || z.accountId === oldAcc) z.accountId = newAcc; });
+      var probe = Object.assign({}, existing, data, { status: 'completada', settleSide: side });
       var pst = C.exchangeSettlement(probe);
-      data.status = pst.pending > 0 ? (pst.side === 'in' ? 'pendiente_cobro' : 'pendiente_entrega') : 'completada';
+      // Elegiste «Completado» pero falta algo: se registra lo que falta (hoy, en la cuenta del formulario)
+      if (pst.pending > 0 && data.status === 'completada' &&
+          confirm('Falta ' + (side === 'in' ? 'cobrar ' : 'entregar ') + fmtMoney(pst.pending, pst.currency) + '. ¿Darlo por ' + (side === 'in' ? 'cobrado en ' : 'entregado desde ') +
+            (newAcc ? '«' + accName(newAcc) + '»' : '(sin cuenta)') + ' con fecha de hoy?')) {
+        existing.settlements.push({ id: S.uid(), date: S.today(), amount: pst.pending, accountId: newAcc || null, note: 'Completado al editar', createdAt: Date.now() });
+        pst = C.exchangeSettlement(Object.assign({}, existing, data, { status: 'completada', settleSide: side }));
+      }
+      data.status = pst.pending > 0 ? (side === 'in' ? 'pendiente_cobro' : 'pendiente_entrega') : 'completada';
+      data.settleSide = side;
     }
     if (existing) { Object.assign(existing, data); toast('Cambio actualizado'); }
     else {
@@ -4120,6 +4143,15 @@
         }
       }
       else if (d.action === 'fx-open-edit') { editFx(d.id); }
+      else if (d.action === 'fx-fix-settle-acc') {
+        var fxx = byId(state.exchanges, d.id), fst = fxx && C.exchangeSettlement(fxx);
+        if (fst) {
+          var acc2 = fst.side === 'in' ? fxx.inAccountId : fxx.outAccountId;
+          (fxx.settlements || []).forEach(function (z) { if (z.accountId !== acc2) { invalidateSnapshots(z.date); z.accountId = acc2; } });
+          persist(); editFx(fxx.id);
+          toast((fst.side === 'in' ? 'Cobros movidos a ' : 'Entregas movidas a ') + accName(acc2));
+        }
+      }
       else if (d.action === 'fx-settle') { openFxSettle(d.id); }
       else if (d.delPay) {
         var dp = byId(state.debts, $('#debt-form').editId.value);
