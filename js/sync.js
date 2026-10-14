@@ -16,7 +16,7 @@
 
   var CFG_KEY = 'misFinanzas.sync';      // configuración y sesión (no contiene tus datos)
   var KDF_ITER = 310000;
-  var COLLECTIONS = ['accounts', 'categories', 'methods', 'transactions', 'investments', 'debts', 'exchanges'];
+  var COLLECTIONS = ['accounts', 'categories', 'methods', 'transactions', 'investments', 'debts', 'exchanges', 'sales', 'loans'];
 
   // ---------------------------------------------------------------- utilidades
   function b64(buf) {
@@ -201,7 +201,7 @@
   /** ¿El dispositivo solo tiene los datos iniciales (instalación nueva)? */
   function isPristine(s) {
     return !(s.transactions || []).length && !(s.investments || []).length && !(s.debts || []).length &&
-      !(s.exchanges || []).length && (s.accounts || []).length <= 1 && !s.profile;
+      !(s.exchanges || []).length && !(s.sales || []).length && !(s.loans || []).length && (s.accounts || []).length <= 1 && !s.profile;
   }
 
   // ---------------------------------------------------------------- motor

@@ -255,6 +255,17 @@
       (x.costs || []).forEach(function (c) { if (c.accountId) add(c.accountId, -Number(c.amount), x); });
     });
     // Deudas: un préstamo mueve dinero al crearse; cada abono entra (por cobrar) o sale (por pagar)
+    // Ventas: de contado entra todo en su cuenta; por cobrar entra con cada cobro
+    (state.sales || []).forEach(function (sv) {
+      if (sv.mode === 'contado') { if (sv.accountId) add(sv.accountId, Number(sv.amount), sv); }
+      else (sv.payments || []).forEach(function (pm) { if (pm.accountId) add(pm.accountId, Number(pm.amount), pm); });
+    });
+    // Préstamos: el capital sale (presté) o entra (me prestaron); cada pago entra o sale
+    (state.loans || []).forEach(function (l) {
+      var sign = l.kind === 'recibido' ? 1 : -1;
+      if (l.accountId) add(l.accountId, sign * Number(l.principal), l);
+      (l.payments || []).forEach(function (pm) { if (pm.accountId) add(pm.accountId, -sign * Number(pm.amount), pm); });
+    });
     (state.debts || []).forEach(function (d) {
       var sign = d.kind === 'cobrar' ? 1 : -1;
       if (d.accountId) add(d.accountId, -sign * Number(d.amount), d);
@@ -558,6 +569,101 @@
       pending: pending > 0 ? pending : 0, status: pending <= 0 ? 'pagada' : paid > 0 ? 'parcial' : 'pendiente' };
   }
 
+  // =================================================================== Ventas
+  /** Venta: de contado está cobrada; por cobrar = total − cobros. */
+  function saleBalance(sv) {
+    var total = round(Number(sv.amount) || 0, 2);
+    if (sv.mode === 'contado') return { total: total, paid: total, pending: 0, status: 'pagada' };
+    var paid = sum((sv.payments || []).map(function (p) { return p.amount; }));
+    var pending = round(total - paid, 2);
+    return { total: total, paid: paid, pending: pending > 0 ? pending : 0, status: pending <= 0 ? 'pagada' : paid > 0 ? 'parcial' : 'pendiente' };
+  }
+
+  // =================================================================== Préstamos
+  var PERIODS = { diario: { days: 1 }, semanal: { days: 7 }, quincenal: { days: 15 }, mensual: { months: 1 }, bimestral: { months: 2 },
+    trimestral: { months: 3 }, semestral: { months: 6 }, anual: { months: 12 } };
+  /** Fecha `k` periodos después de `iso` (quincenal = 15 días; los meses respetan fin de mes). */
+  function addPeriod(iso, period, k) {
+    var p = PERIODS[period] || PERIODS.mensual;
+    return p.days ? addDays(iso, p.days * k) : shiftMonths(iso, p.months * k);
+  }
+  /**
+   * Plan de cuotas de un préstamo.
+   *  l: { principal, installments, period, date, firstDue?, interest: { mode: 'ninguno'|'porcentaje'|'fijo', value, basis: 'periodo'|'total', method: 'simple'|'frances' } }
+   *  · porcentaje por periodo, simple:   interés total = capital × % × cuotas
+   *  · porcentaje por periodo, sobre saldo (francés): cuota fija = C·r / (1 − (1+r)^−n); interés = saldo × r
+   *  · porcentaje en total:              interés total = capital × %
+   *  · monto fijo por periodo:           interés total = monto × cuotas ;  monto fijo en total: interés total = monto
+   *  Capital e interés se reparten en partes iguales; la última cuota ajusta los centavos.
+   */
+  function loanSchedule(l) {
+    var P = round(Number(l.principal) || 0, 2), n = Math.max(1, Math.floor(Number(l.installments) || 1));
+    var it = l.interest || {}, mode = it.mode || 'ninguno', v = Number(it.value) || 0, basis = it.basis === 'total' ? 'total' : 'periodo';
+    var first = l.firstDue || addPeriod(l.date, l.period, 1);
+    // Cada cuota se cuenta desde el inicio (31/1 mensual → 28/2, 31/3, 30/4) o desde la primera cuota elegida
+    var dueOf = function (i) { return l.firstDue ? addPeriod(l.firstDue, l.period, i) : addPeriod(l.date, l.period, i + 1); };
+    var rows = [], i;
+    if (mode === 'porcentaje' && basis === 'periodo' && it.method === 'frances' && v > 0) {
+      var r = v / 100, cuota = round(P * r / (1 - Math.pow(1 + r, -n)), 2), saldo = P;
+      for (i = 0; i < n; i++) {
+        var ip = round(saldo * r, 2), cap = i === n - 1 ? saldo : round(cuota - ip, 2);
+        rows.push({ n: i + 1, date: dueOf(i), capital: cap, interest: ip, total: round(cap + ip, 2) });
+        saldo = round(saldo - cap, 2);
+      }
+    } else {
+      var I = mode === 'porcentaje' ? (basis === 'periodo' ? P * v / 100 * n : P * v / 100) : mode === 'fijo' ? (basis === 'periodo' ? v * n : v) : 0;
+      I = round(I, 2);
+      var capEach = round(P / n, 2), intEach = round(I / n, 2);
+      for (i = 0; i < n; i++) {
+        var last = i === n - 1;
+        var c = last ? round(P - capEach * (n - 1), 2) : capEach, t = last ? round(I - intEach * (n - 1), 2) : intEach;
+        rows.push({ n: i + 1, date: dueOf(i), capital: c, interest: t, total: round(c + t, 2) });
+      }
+    }
+    var interest = sum(rows.map(function (x) { return x.interest; }));
+    return { rows: rows, principal: P, interest: interest, total: round(P + interest, 2), first: first };
+  }
+  /**
+   * Reparte cada pago (en orden de fecha) sobre las cuotas: en cada cuota primero el interés y luego el capital.
+   * Devuelve [{ payment, interest, capital }] — el interés es lo que cuenta como ingreso (o gasto) el día del pago.
+   */
+  function loanPaymentSplit(l) {
+    var rows = loanSchedule(l).rows.map(function (x) { return { interest: x.interest, capital: x.capital }; });
+    var pays = (l.payments || []).slice().sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : (a.createdAt || 0) - (b.createdAt || 0); });
+    var k = 0;
+    return pays.map(function (pm) {
+      var left = round(Number(pm.amount) || 0, 2), gi = 0, gc = 0;
+      while (left > 0 && k < rows.length) {
+        var r = rows[k], a = Math.min(left, r.interest);
+        r.interest = round(r.interest - a, 2); left = round(left - a, 2); gi += a;
+        var b = Math.min(left, r.capital);
+        r.capital = round(r.capital - b, 2); left = round(left - b, 2); gc += b;
+        if (r.interest <= 0 && r.capital <= 0) k++;
+      }
+      return { payment: pm, interest: round(gi, 2), capital: round(gc + left, 2) };   // lo que sobre (pago de más) va a capital
+    });
+  }
+  /** Estado del préstamo hoy: cuotas pagadas/parciales/vencidas, lo pendiente, el capital pendiente y la próxima cuota. */
+  function loanStatus(l, today) {
+    var sc = loanSchedule(l), split = loanPaymentSplit(l);
+    var paid = sum((l.payments || []).map(function (p) { return p.amount; }));
+    var interestPaid = sum(split.map(function (x) { return x.interest; })), capitalPaid = sum(split.map(function (x) { return x.capital; }));
+    var left = paid, overdue = 0, next = null;
+    var rows = sc.rows.map(function (r) {
+      var got = round(Math.min(left, r.total), 2); left = round(left - got, 2);
+      var st = got >= r.total ? 'pagada' : got > 0 ? 'parcial' : 'pendiente';
+      var due = round(r.total - got, 2);
+      if (st !== 'pagada' && today && r.date < today) { st = 'vencida'; overdue = round(overdue + due, 2); }
+      if (!next && due > 0) next = { n: r.n, date: r.date, amount: due };
+      return Object.assign({}, r, { paid: got, due: due, status: st });
+    });
+    var pending = round(sc.total - paid, 2), capPend = round(sc.principal - capitalPaid, 2);
+    return { rows: rows, principal: sc.principal, interest: sc.interest, total: sc.total, paid: paid,
+      interestPaid: interestPaid, capitalPaid: capitalPaid, pending: pending > 0 ? pending : 0, capitalPending: capPend > 0 ? capPend : 0,
+      overdue: overdue, next: next, paidCount: rows.filter(function (r) { return r.status === 'pagada'; }).length,
+      status: pending <= 0 ? 'pagada' : paid > 0 ? 'parcial' : 'pendiente' };
+  }
+
   /** Saldo de una deuda: total − abonos. Estado: pendiente, parcial o pagada. */
   function debtBalance(d) {
     var paid = sum((d.payments || []).map(function (p) { return p.amount; }));
@@ -579,6 +685,19 @@
         total: Number(d.amount), paid: b.paid, pending: b.pending, status: b.status, pendingBase: toBase(b.pending, d.currency, rates)
       };
       (d.kind === 'cobrar' ? rec : pay).push(item);
+    });
+    (state.sales || []).forEach(function (sv) {
+      if (sv.mode === 'contado') return;
+      var b = saleBalance(sv);
+      rec.push({ source: 'venta', id: sv.id, person: sv.client, concept: sv.concept || 'Venta', currency: sv.currency, date: sv.date, dueDate: sv.dueDate || null,
+        total: b.total, paid: b.paid, pending: b.pending, status: b.status, pendingBase: toBase(b.pending, sv.currency, rates) });
+    });
+    (state.loans || []).forEach(function (l) {
+      var st = loanStatus(l, today);
+      // Lo que vale hoy (patrimonio) es el capital pendiente; los intereses futuros aún no se han ganado
+      (l.kind === 'recibido' ? pay : rec).push({ source: 'prestamo', id: l.id, person: l.person, concept: 'Préstamo', currency: l.currency, date: l.date,
+        dueDate: st.next ? st.next.date : null, total: st.total, paid: st.paid, pending: st.pending, status: st.status,
+        capitalPending: st.capitalPending, pendingBase: toBase(st.capitalPending, l.currency, rates), next: st.next, installments: st.rows.length });
     });
     (state.exchanges || []).forEach(function (x) {
       var st = exchangeSettlement(x);
@@ -613,6 +732,16 @@
       var fee = transferFee(t);
       if (fee) extra.push({ id: 'tf_' + t.id, synthetic: true, type: fee > 0 ? 'egreso' : 'ingreso', amount: Math.abs(fee),
         currency: t.toCurrency, categoryId: '__comisiones', accountId: t.fromAccountId, date: t.date, note: t.note || '' });
+    });
+    (state.sales || []).forEach(function (sv) {
+      if (Number(sv.amount) > 0) extra.push({ id: 'sv_' + sv.id, synthetic: true, type: 'ingreso', amount: Number(sv.amount), currency: sv.currency,
+        categoryId: sv.categoryId || '__ventas', accountId: sv.mode === 'contado' ? sv.accountId : null, date: sv.date, note: sv.client || '' });
+    });
+    (state.loans || []).forEach(function (l) {
+      loanPaymentSplit(l).forEach(function (x) {
+        if (x.interest > 0) extra.push({ id: 'li_' + x.payment.id, synthetic: true, type: l.kind === 'recibido' ? 'egreso' : 'ingreso', amount: x.interest,
+          currency: l.currency, categoryId: l.kind === 'recibido' ? '__intereses_pag' : '__intereses', accountId: x.payment.accountId, date: x.payment.date, note: l.person || '' });
+      });
     });
     return state.transactions.concat(extra);
   }
@@ -773,6 +902,12 @@
         }),
         debts: (state.debts || []).filter(function (x) { return x.date <= d; }).map(function (x) {
           return Object.assign({}, x, { payments: (x.payments || []).filter(function (pm) { return pm.date <= d; }) });
+        }),
+        sales: (state.sales || []).filter(function (x) { return x.date <= d; }).map(function (x) {
+          return Object.assign({}, x, { payments: (x.payments || []).filter(function (pm) { return pm.date <= d; }) });
+        }),
+        loans: (state.loans || []).filter(function (x) { return x.date <= d; }).map(function (x) {
+          return Object.assign({}, x, { payments: (x.payments || []).filter(function (pm) { return pm.date <= d; }) });
         })
       };
       var bal = accountBalances(sub).filter(function (a) { return !opts.accountId || a.account.id === opts.accountId; });
@@ -811,6 +946,7 @@
     custodyOf: custodyOf, accountHoldings: accountHoldings,
     rankByUse: rankByUse, swipeIntent: swipeIntent, pullIntent: pullIntent,
     exchangeQuote: exchangeQuote, exchangeProfit: exchangeProfit, debtBalance: debtBalance, thirdParty: thirdParty, exchangeSettlement: exchangeSettlement,
+    saleBalance: saleBalance, PERIODS: PERIODS, addPeriod: addPeriod, loanSchedule: loanSchedule, loanPaymentSplit: loanPaymentSplit, loanStatus: loanStatus,
     flowTransactions: flowTransactions,
     samePeg: samePeg,
     transferFee: transferFee,

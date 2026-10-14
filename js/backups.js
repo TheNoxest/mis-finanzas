@@ -20,7 +20,7 @@
   /** Resumen legible de un estado: cuántos registros tiene. */
   function summarize(state) {
     var n = function (k) { return (state[k] || []).length; };
-    return { accounts: n('accounts'), transactions: n('transactions'), investments: n('investments'), debts: n('debts'), exchanges: n('exchanges') };
+    return { accounts: n('accounts'), transactions: n('transactions'), investments: n('investments'), debts: n('debts'), exchanges: n('exchanges'), sales: n('sales'), loans: n('loans') };
   }
 
   /** Versiones locales: se conservan las `keep` más recientes. Devuelve los ids a borrar. */

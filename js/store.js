@@ -56,7 +56,9 @@
       profile: null,           // perfil de inversor (cuestionario de la Fase 4)
       assetMeta: {},           // nombre y logo de activos consultados (caché de 7 días)
       debts: [],               // cuentas por cobrar / por pagar a terceros
-      exchanges: []            // cambios de divisas a terceros
+      exchanges: [],           // cambios de divisas a terceros
+      sales: [],               // ventas (de contado o por cobrar)
+      loans: []                // préstamos (presté / me prestaron) con plan de cuotas
     };
   }
 
@@ -106,6 +108,8 @@
       assetMeta: data.assetMeta && typeof data.assetMeta === 'object' ? data.assetMeta : {},
       debts: Array.isArray(data.debts) ? data.debts : [],
       exchanges: Array.isArray(data.exchanges) ? data.exchanges : [],
+      sales: Array.isArray(data.sales) ? data.sales : [],
+      loans: Array.isArray(data.loans) ? data.loans : [],
       deleted: data.deleted && typeof data.deleted === 'object' ? data.deleted : {}   // registros borrados (para sincronizar)
     };
     out.settings.rates[out.settings.baseCurrency] = 1;
@@ -115,7 +119,7 @@
   // ---------- Marcas de cambio (para sincronizar entre dispositivos) ----------
   // Cada registro lleva `_u` = momento de su último cambio. Al guardar se compara con lo guardado
   // antes: lo que cambió recibe la hora actual y lo que desapareció queda en `deleted` (lápida).
-  var COLLECTIONS = ['accounts', 'categories', 'methods', 'transactions', 'investments', 'debts', 'exchanges'];
+  var COLLECTIONS = ['accounts', 'categories', 'methods', 'transactions', 'investments', 'debts', 'exchanges', 'sales', 'loans'];
   var SINGLES = ['settings', 'profile'];
   var baseline = null;   // huellas de lo último guardado: id → JSON
 

@@ -176,6 +176,8 @@
         <button type="button" role="tab" data-acc-tab="cobrar">Por cobrar</button>
         <button type="button" role="tab" data-acc-tab="pagar">Por pagar</button>
         <button type="button" role="tab" data-acc-tab="cambios">Cambios</button>
+        <button type="button" role="tab" data-acc-tab="ventas">Ventas</button>
+        <button type="button" role="tab" data-acc-tab="prestamos">Préstamos</button>
       </div>
       <datalist id="people-list"></datalist>
 
@@ -229,6 +231,7 @@
           <ul class="list" id="debt-list"></ul>
         </div>
 
+        <div data-pay-anchor></div>
         <div class="card hidden" id="debt-payments">
           <h2 id="pay-title">Abonos</h2>
           <div class="progress" id="pay-progress"></div>
@@ -345,6 +348,126 @@
           <div class="totals" id="fx-totals"></div>
           <ul class="list" id="fx-list"></ul>
         </div>
+      </div>
+
+      <!-- ---------- Ventas ---------- -->
+      <div id="acc-panel-ventas" class="acc-panel hidden">
+        <div class="hero compact">
+          <div class="eyebrow">Ventas · <span id="sale-month-name"></span></div>
+          <div class="hero-value" id="sale-total">—</div>
+          <div class="stat-row" id="sale-stats"></div>
+        </div>
+        <div data-pay-anchor></div>
+
+        <form id="sale-form" class="card form" autocomplete="off" novalidate>
+          <h2 id="sale-form-title">Nueva venta</h2>
+          <div class="seg" role="radiogroup" aria-label="Forma de pago">
+            <input type="radio" name="mode" id="sm-contado" value="contado" checked><label for="sm-contado">De contado</label>
+            <input type="radio" name="mode" id="sm-credito" value="credito"><label for="sm-credito">Por cobrar</label>
+          </div>
+          <div class="grid">
+            <label class="span2">Cliente<input name="client" list="people-list" maxlength="60" placeholder="Nombre del cliente"></label>
+            <label class="span2">Qué vendiste<input name="concept" maxlength="80" placeholder="Producto o servicio"></label>
+            <label>Cantidad<input inputmode="decimal" autocomplete="off" name="quantity" type="text" value="1"></label>
+            <label>Precio unitario<input inputmode="decimal" autocomplete="off" name="unitPrice" type="text" placeholder="0.00"></label>
+            <label>Moneda<select name="currency"></select></label>
+            <label>Fecha<input name="date" type="date"></label>
+            <label class="span2">Categoría<select name="categoryId"></select></label>
+            <label class="span2 only-contado">Entra en<select name="accountId"></select></label>
+            <label class="only-credito hidden">Vence <span class="muted">(opcional)</span><input name="dueDate" type="date"></label>
+            <label class="only-credito hidden">Abono inicial <span class="muted">(opcional)</span><input inputmode="decimal" autocomplete="off" name="downPayment" type="text" placeholder="0"></label>
+            <label class="span2 only-credito hidden">El abono entra en<select name="downAccountId"></select></label>
+            <label class="span2">Nota<input name="note" maxlength="140" placeholder="Opcional"></label>
+          </div>
+          <div class="quote" id="sale-preview"></div>
+          <div class="actions">
+            <button type="button" class="danger hidden" data-action="delete-sale">Eliminar</button>
+            <button type="button" class="ghost hidden" data-action="cancel-sale">Cancelar</button>
+            <button type="submit" class="primary">Guardar venta</button>
+          </div>
+          <input type="hidden" name="editId">
+        </form>
+
+        <div class="card">
+          <div class="card-head wrap"><h2>Historial de ventas <small class="muted small">· toca una para ver o editar</small></h2>
+            <input type="month" id="sale-month" aria-label="Mes" class="month-filter"></div>
+          <div class="totals" id="sale-totals"></div>
+          <ul class="list" id="sale-list"></ul>
+        </div>
+      </div>
+
+      <!-- ---------- Préstamos ---------- -->
+      <div id="acc-panel-prestamos" class="acc-panel hidden">
+        <div class="hero compact">
+          <div class="eyebrow">Te deben por préstamos (capital)</div>
+          <div class="hero-value" id="loan-total">—</div>
+          <div class="stat-row" id="loan-stats"></div>
+        </div>
+        <div data-pay-anchor></div>
+
+        <div class="card">
+          <div class="card-head wrap"><h2>Préstamos</h2>
+            <div class="seg seg-sm" role="radiogroup" aria-label="Filtro">
+              <input type="radio" name="loan-filter" id="lf-open" value="open" checked><label for="lf-open">Activos</label>
+              <input type="radio" name="loan-filter" id="lf-paid" value="paid"><label for="lf-paid">Pagados</label>
+              <input type="radio" name="loan-filter" id="lf-all" value="all"><label for="lf-all">Todos</label>
+            </div>
+          </div>
+          <ul class="list" id="loan-list"></ul>
+        </div>
+
+        <form id="loan-form" class="card form" autocomplete="off" novalidate>
+          <h2 id="loan-form-title">Nuevo préstamo</h2>
+          <div class="seg" role="radiogroup" aria-label="Tipo de préstamo">
+            <input type="radio" name="kind" id="lk-otorgado" value="otorgado" checked><label for="lk-otorgado">Presté dinero</label>
+            <input type="radio" name="kind" id="lk-recibido" value="recibido"><label for="lk-recibido">Me prestaron</label>
+          </div>
+          <div class="grid">
+            <label class="span2"><span id="loan-person-label">¿A quién le prestaste?</span><input name="person" list="people-list" maxlength="60" placeholder="Nombre"></label>
+            <label>Monto prestado<input inputmode="decimal" autocomplete="off" name="principal" type="text" placeholder="0.00"></label>
+            <label>Moneda<select name="currency"></select></label>
+            <label>Fecha<input name="date" type="date"></label>
+            <label><span id="loan-acc-label">Sale de</span><select name="accountId"></select></label>
+          </div>
+          <h3>Intereses</h3>
+          <div class="grid">
+            <label>Tipo
+              <select name="intMode">
+                <option value="ninguno">Sin interés</option>
+                <option value="porcentaje">Porcentaje</option>
+                <option value="fijo">Monto fijo</option>
+              </select>
+            </label>
+            <label class="int-only hidden"><span id="loan-int-label">Porcentaje</span><input inputmode="decimal" autocomplete="off" name="intValue" type="text" placeholder="0"></label>
+            <label class="span2 int-only hidden">Se aplica
+              <select name="intBasis">
+                <option value="periodo">En cada cuota (por periodo)</option>
+                <option value="total">Una sola vez (sobre el total)</option>
+              </select>
+            </label>
+            <label class="span2 int-method hidden">Cálculo
+              <select name="intMethod">
+                <option value="simple">Simple: siempre sobre el monto prestado</option>
+                <option value="frances">Sobre lo que falta pagar (cuota fija)</option>
+              </select>
+            </label>
+          </div>
+          <h3>Plazos</h3>
+          <div class="grid">
+            <label>Número de cuotas<input inputmode="numeric" autocomplete="off" name="installments" type="text" value="1"></label>
+            <label>Frecuencia<select name="period"><option value="diario">Cada día</option><option value="semanal">Cada semana</option><option value="quincenal">Cada quincena</option><option value="mensual" selected>Cada mes</option><option value="bimestral">Cada 2 meses</option><option value="trimestral">Cada 3 meses</option><option value="semestral">Cada 6 meses</option><option value="anual">Cada año</option></select></label>
+            <label class="span2">Primera cuota <span class="muted" id="loan-first-hint"></span><input name="firstDue" type="date"></label>
+          </div>
+          <div class="quote" id="loan-quote"></div>
+          <details class="table-toggle"><summary>Ver plan de cuotas</summary><div class="table-wrap" id="loan-plan"></div></details>
+          <label>Nota<input name="note" maxlength="140" placeholder="Opcional"></label>
+          <div class="actions">
+            <button type="button" class="danger hidden" data-action="delete-loan">Eliminar</button>
+            <button type="button" class="ghost hidden" data-action="cancel-loan">Cancelar</button>
+            <button type="submit" class="primary">Guardar préstamo</button>
+          </div>
+          <input type="hidden" name="editId">
+        </form>
       </div>
     </section>
 

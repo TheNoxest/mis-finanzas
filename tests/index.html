@@ -385,8 +385,8 @@
     eq('Sin marcar, la nube ganaba (999)', Sync.merge(oldV, cloudNow).transactions[0].amount, 999);
     eq('Con touchAll, la versión restaurada gana (100)', afterSync.transactions.filter(function (t) { return t.id === 'r1'; })[0].amount, 100);
     eq('touchAll revive registros que estaban borrados', Store.touchAll({ transactions: [{ id: 'x' }], deleted: { x: 1 } }, 5).deleted, {});
-    eq('Resumen de una versión', B.summarize({ accounts: [1, 2], transactions: [1], investments: [], debts: [1], exchanges: [] }),
-      { accounts: 2, transactions: 1, investments: 0, debts: 1, exchanges: 0 });
+    eq('Resumen de una versión (incluye ventas y préstamos)', B.summarize({ accounts: [1, 2], transactions: [1], investments: [], debts: [1], exchanges: [], sales: [1, 2, 3], loans: [1] }),
+      { accounts: 2, transactions: 1, investments: 0, debts: 1, exchanges: 0, sales: 3, loans: 1 });
 
     section('Registro rápido y gestos (Sprint 1)');
     var useRecs = [
@@ -452,6 +452,56 @@
     var px3 = { id: 'x3', date: '2026-10-03', status: 'pendiente_cobro', received: 20, inCurrency: 'USD', delivered: 18, outCurrency: 'EUR', inAccountId: 'U', outAccountId: null, costs: [] };
     eq('Cambio pendiente antiguo (sin registros): no entra nada en U y se debe todo (20)',
       [C.accountBalances(Object.assign({}, pst, { exchanges: [px3] }))[0].balance, C.thirdParty(Object.assign({}, pst, { exchanges: [px3] }), '2026-10-31').receivableBase], [0, 20]);
+
+    section('Préstamos: plan de cuotas e intereses');
+    var lA = { id: 'lA', kind: 'otorgado', person: 'Pedro', principal: 1000, currency: 'USD', date: '2026-01-10', accountId: 'L', installments: 4, period: 'mensual',
+      interest: { mode: 'porcentaje', value: 5, basis: 'periodo', method: 'simple' }, payments: [] };
+    var scA = C.loanSchedule(lA);
+    eq('1000 al 5 % mensual simple, 4 cuotas: interés 1000 × 5 % × 4 = 200 → 4 cuotas de 250 + 50 = 300; total 1200',
+      [scA.interest, scA.total, scA.rows.map(function (r) { return [r.date, r.capital, r.interest, r.total]; })],
+      [200, 1200, [['2026-02-10', 250, 50, 300], ['2026-03-10', 250, 50, 300], ['2026-04-10', 250, 50, 300], ['2026-05-10', 250, 50, 300]]]);
+    var scF = C.loanSchedule({ principal: 1000, installments: 3, period: 'mensual', date: '2026-01-31', interest: { mode: 'porcentaje', value: 10, basis: 'periodo', method: 'frances' } });
+    eq('Sobre saldo (cuota fija) 1000 al 10 %, 3 cuotas: 1000·0.1/(1−1.1⁻³) = 402.11; intereses 100 + 69.79 + 36.56 = 206.35; fechas a fin de mes',
+      [scF.rows.map(function (r) { return [r.date, r.capital, r.interest, r.total]; }), scF.interest, scF.total],
+      [[['2026-02-28', 302.11, 100, 402.11], ['2026-03-31', 332.32, 69.79, 402.11], ['2026-04-30', 365.57, 36.56, 402.13]], 206.35, 1206.35]);
+    var sc2 = function (it, n, P) { return C.loanSchedule({ principal: P || 1000, installments: n, period: 'quincenal', date: '2026-03-01', interest: it }); };
+    eq('Interés: % en total 10 % de 1000 = 100 · fijo en total 50 · fijo 10 por cuota × 3 = 30 · sin interés = 0',
+      [sc2({ mode: 'porcentaje', value: 10, basis: 'total' }, 4).interest, sc2({ mode: 'fijo', value: 50, basis: 'total' }, 2).interest,
+       sc2({ mode: 'fijo', value: 10, basis: 'periodo' }, 3).interest, sc2({ mode: 'ninguno' }, 3).interest], [100, 50, 30, 0]);
+    eq('Quincenal desde el 1/3: cuotas el 16/3 y el 31/3 · 100 en 3 cuotas = 33.33 + 33.33 + 33.34',
+      [sc2({ mode: 'fijo', value: 50, basis: 'total' }, 2, 500).rows.map(function (r) { return r.date; }), sc2({ mode: 'ninguno' }, 3, 100).rows.map(function (r) { return r.capital; })],
+      [['2026-03-16', '2026-03-31'], [33.33, 33.33, 33.34]]);
+    lA.payments = [{ id: 'p1', date: '2026-02-10', amount: 300, accountId: 'L' }, { id: 'p2', date: '2026-03-12', amount: 150, accountId: 'L' }];
+    eq('Pagos 300 y 150: cada uno paga primero el interés de su cuota (50) y luego capital (250 y 100)',
+      C.loanPaymentSplit(lA).map(function (x) { return [x.interest, x.capital]; }), [[50, 250], [50, 100]]);
+    var stA = C.loanStatus(lA, '2026-04-15');
+    eq('Al 15/4: pagado 450 de 1200 → pendiente 750; capital pendiente 1000 − 350 = 650; vencido cuota 2 (150) + cuota 3 (300) = 450; próxima: cuota 2 por 150',
+      [stA.paid, stA.pending, stA.capitalPending, stA.overdue, stA.next, stA.rows.map(function (r) { return r.status; }), stA.status],
+      [450, 750, 650, 450, { n: 2, date: '2026-03-10', amount: 150 }, ['pagada', 'vencida', 'vencida', 'pendiente'], 'parcial']);
+
+    section('Ventas y préstamos en saldos, ingresos y patrimonio');
+    var lB = { id: 'lB', kind: 'recibido', person: 'Banco', principal: 600, currency: 'USD', date: '2026-01-05', accountId: 'L', installments: 3, period: 'mensual',
+      interest: { mode: 'ninguno' }, payments: [{ id: 'p3', date: '2026-02-05', amount: 200, accountId: 'L' }] };
+    var vps = { settings: { baseCurrency: 'USD', rates: { USD: 1, USDT: 1 } }, snapshots: {}, prices: {}, investments: [], debts: [], exchanges: [], transactions: [],
+      accounts: [{ id: 'L', currency: 'USD', initialBalance: 2000 }], loans: [lA, lB],
+      sales: [{ id: 'v1', date: '2026-04-01', client: 'Mostrador', concept: 'Camisa', amount: 120, currency: 'USD', mode: 'contado', accountId: 'L', categoryId: 'ven' },
+        { id: 'v2', date: '2026-04-02', client: 'Ana', concept: 'Pedido', amount: 300, currency: 'USD', mode: 'credito', dueDate: '2026-04-20', categoryId: 'ven',
+          payments: [{ id: 'p4', date: '2026-04-10', amount: 100, accountId: 'L' }] }] };
+    eq('Saldo L: 2000 − 1000 (presté) + 300 + 150 (me pagan) + 600 (me prestaron) − 200 (pago) + 120 (contado) + 100 (cobro) = 2070',
+      C.accountBalances(vps)[0].balance, 2070);
+    eq('Venta por cobrar: 300 − 100 = 200 pendiente (parcial) · de contado: cobrada', [C.saleBalance(vps.sales[1]), C.saleBalance(vps.sales[0]).status],
+      [{ total: 300, paid: 100, pending: 200, status: 'parcial' }, 'pagada']);
+    var vtp = C.thirdParty(vps, '2026-05-01');
+    eq('Por cobrar: préstamo (capital 650) + venta (200, vencida el 20/4) = 850 · por pagar: préstamo recibido 600 − 200 = 400',
+      [vtp.receivableBase, vtp.receivables.map(function (i) { return [i.source, i.pendingBase, i.overdue]; }), vtp.payableBase], [850, [['venta', 200, true], ['prestamo', 650, true]], 400]);
+    var vfl = C.flowTransactions(vps).filter(function (t) { return t.synthetic; });
+    eq('Ingresos: ventas 120 + 300 el día de venta; intereses cobrados 50 + 50 el día de cada pago (el capital y los cobros no son ingreso)',
+      vfl.map(function (t) { return [t.type, t.amount, t.categoryId, t.date]; }),
+      [['ingreso', 120, 'ven', '2026-04-01'], ['ingreso', 300, 'ven', '2026-04-02'], ['ingreso', 50, '__intereses', '2026-02-10'], ['ingreso', 50, '__intereses', '2026-03-12']]);
+    var vnw = C.netWorth(vps, '2026-05-01');
+    eq('Patrimonio: 2070 + te deben 850 − debes 400 = 2520 = 2000 + intereses 100 + ventas 420', vnw.total, 2520);
+    eq('El 20/2: L = 2000 − 1000 + 300 + 600 − 200 = 1700; te deben 750 (capital); debes 400 → 2050 (= 2000 + interés 50)',
+      C.netWorthSeries(vps, ['2026-02-20'], { today: '2026-05-01' })[0].total, 2050);
 
     section('Registro por voz o texto');
     var vctx = { today: '2026-10-14', defaultAccountId: 'efe', currencies: ['USD', 'USDT', 'EUR'],
