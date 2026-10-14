@@ -16,7 +16,7 @@
 
   var CFG_KEY = 'misFinanzas.sync';      // configuración y sesión (no contiene tus datos)
   var KDF_ITER = 310000;
-  var COLLECTIONS = ['accounts', 'categories', 'methods', 'transactions', 'investments', 'debts', 'exchanges', 'sales', 'loans'];
+  var COLLECTIONS = ['accounts', 'categories', 'methods', 'transactions', 'investments', 'debts', 'exchanges', 'sales', 'loans', 'contacts'];
 
   // ---------------------------------------------------------------- utilidades
   function b64(buf) {

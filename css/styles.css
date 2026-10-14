@@ -444,7 +444,7 @@ dialog::backdrop { background: rgba(0, 0, 0, .35); }
 @media (max-width: 440px) { .sync { display: none; } .topbar-right { gap: 6px; } }
 
 /* ===== Terceros: por cobrar, por pagar y cambios ===== */
-.subtabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; background: var(--surface-2); border-radius: 12px; padding: 4px; margin: 4px 0 14px; }
+.subtabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; background: var(--surface-2); border-radius: 12px; padding: 4px; margin: 4px 0 14px; }
 .subtabs button { min-height: 36px; padding: 6px 4px; border: 0; border-radius: 9px; background: transparent; color: var(--ink-2); font-size: .8rem; white-space: nowrap; }
 .subtabs button[aria-selected="true"] { background: var(--surface); color: var(--ink); font-weight: 650; box-shadow: 0 1px 3px rgba(0, 0, 0, .1); }
 .hero-third { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: .85rem; color: var(--ink-2); }
@@ -639,3 +639,23 @@ main { padding-bottom: 96px; }   /* que el botón «+» no tape lo último de ca
 .loan-plan-table { font-size: .76rem; }
 .loan-plan-table th, .loan-plan-table td { padding: 6px 4px; white-space: nowrap; }
 .loan-plan-table .tag { font-size: .68rem; padding: 1px 6px; }
+
+/* ---------- Clientes ---------- */
+.people-suggest { position: absolute; left: 0; right: 0; top: 100%; z-index: 40; margin: 4px 0 0; padding: 4px; list-style: none;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); max-height: 260px; overflow-y: auto; }
+.people-suggest li { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 9px; cursor: pointer; color: var(--ink); font-size: .9rem; }
+.people-suggest li.sel, .people-suggest li:hover { background: var(--surface-2); }
+.people-suggest li .main { flex: 1; min-width: 0; }
+.people-suggest li .sub { font-size: .75rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.people-suggest li.new { color: var(--accent); font-weight: 600; }
+.people-suggest .avatar { width: 28px; height: 28px; font-size: .7rem; }
+label.has-suggest { position: relative; }
+.person-head { display: flex; align-items: center; gap: 12px; }
+.person-head .avatar { width: 44px; height: 44px; font-size: .95rem; }
+.person-head .main { flex: 1; min-width: 0; }
+.person-head .name { font-size: 1.15rem; font-weight: 700; }
+.person-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 4px; }
+.person-actions button { min-height: 36px; padding: 6px 12px; font-size: .85rem; }
+.ppl-amt .owes { color: var(--up); } .ppl-amt .owe { color: var(--down); }
+.hist-sub { white-space: normal !important; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+.people-suggest li.new { display: block; } .people-suggest li.new .sub { display: inline; font-weight: 400; }

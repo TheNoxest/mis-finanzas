@@ -569,6 +569,101 @@
       pending: pending > 0 ? pending : 0, status: pending <= 0 ? 'pagada' : paid > 0 ? 'parcial' : 'pendiente' };
   }
 
+  // =================================================================== Clientes (personas)
+  /** Clave de una persona: sin tildes, sin mayúsculas, sin signos ni espacios dobles («Ana López» = «ana  lopez»). */
+  function personKey(name) {
+    return String(name == null ? '' : name).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, ' ').trim();
+  }
+
+  /**
+   * Directorio de personas armado con los nombres usados en cambios, ventas, préstamos y deudas
+   * (+ fichas de `contacts` con teléfono y nota). Agrupa por `personKey`.
+   * Por persona: cuántas operaciones de cada tipo, última fecha, te debe / le debes (base, lo pendiente de Por cobrar/pagar),
+   * ventas totales, volumen y ganancia de cambios (base).
+   */
+  function peopleIndex(state, today) {
+    var rates = state.settings.rates, map = {};
+    var toB = function (v, c) { var r = toBase(v, c, rates); return isNaN(r) ? 0 : r; };
+    function get(name, date) {
+      var k = personKey(name);
+      if (!k) return null;
+      var p = map[k];
+      if (!p) p = map[k] = { key: k, name: String(name).trim(), contact: null, exchanges: 0, sales: 0, loans: 0, debts: 0,
+        last: '', owesYou: 0, youOwe: 0, salesTotal: 0, fxVolume: 0, fxProfit: 0, spell: {} };
+      if (date && date > p.last) p.last = date;
+      var nm = String(name).trim().replace(/\s+/g, ' ');
+      p.spell[nm] = (p.spell[nm] || 0) + 1;
+      return p;
+    }
+    (state.exchanges || []).forEach(function (x) {
+      var p = get(x.client, x.date); if (!p) return;
+      var pr = exchangeProfit(x, rates);
+      p.exchanges++; p.fxVolume += isNaN(pr.received) ? 0 : pr.received;
+      if (x.status === 'completada') p.fxProfit += isNaN(pr.profit) ? 0 : pr.profit;
+    });
+    (state.sales || []).forEach(function (sv) { var p = get(sv.client, sv.date); if (!p) return; p.sales++; p.salesTotal += toB(sv.amount, sv.currency); });
+    (state.loans || []).forEach(function (l) { var p = get(l.person, l.date); if (p) p.loans++; });
+    (state.debts || []).forEach(function (d) { var p = get(d.person, d.date); if (p) p.debts++; });
+    (state.contacts || []).forEach(function (c) { var p = get(c.name, ''); if (p) { p.contact = c; p.name = String(c.name).trim(); } });
+    var tp = thirdParty(state, today);
+    tp.receivables.forEach(function (i) { var p = map[personKey(i.person)]; if (p && i.status !== 'pagada') p.owesYou += isNaN(i.pendingBase) ? 0 : i.pendingBase; });
+    tp.payables.forEach(function (i) { var p = map[personKey(i.person)]; if (p && i.status !== 'pagada') p.youOwe += isNaN(i.pendingBase) ? 0 : i.pendingBase; });
+    // Nombre a mostrar: el de la ficha; si no, la forma mejor escrita (mayúsculas y tildes), luego la más usada
+    var quality = function (n) { return (n.match(/[A-ZÁÉÍÓÚÑÜ]/g) || []).length + 2 * (n.match(/[áéíóúñüÁÉÍÓÚÑÜ]/g) || []).length; };
+    return Object.keys(map).map(function (k) {
+      var p = map[k];
+      if (!p.contact) p.name = Object.keys(p.spell).sort(function (a, b) { return quality(b) - quality(a) || p.spell[b] - p.spell[a] || a.localeCompare(b); })[0] || p.name;
+      delete p.spell;
+      ['owesYou', 'youOwe', 'salesTotal', 'fxVolume', 'fxProfit'].forEach(function (f) { p[f] = round(p[f], 2); });
+      p.total = p.exchanges + p.sales + p.loans + p.debts;
+      return p;
+    }).sort(function (a, b) { return a.last < b.last ? 1 : a.last > b.last ? -1 : a.name.localeCompare(b.name); });
+  }
+
+  /**
+   * Historial de una persona (más reciente primero): cada cambio, venta, préstamo y deuda con su estado.
+   * item: { date, kind: 'cambio'|'venta'|'prestamo'|'deuda', id, rec, status, amount, currency, pending }
+   */
+  function personHistory(state, key, today) {
+    var out = [];
+    var mine = function (n) { return personKey(n) === key; };
+    (state.exchanges || []).forEach(function (x) {
+      if (!mine(x.client)) return;
+      var st = exchangeSettlement(x);
+      out.push({ date: x.date, kind: 'cambio', id: x.id, rec: x, amount: Number(x.received), currency: x.inCurrency,
+        status: st && st.status !== 'pagada' ? (st.paid > 0 ? 'parcial' : 'pendiente') : 'completada', pending: st ? st.pending : 0, pendingCurrency: st ? st.currency : null });
+    });
+    (state.sales || []).forEach(function (sv) {
+      if (!mine(sv.client)) return;
+      var b = saleBalance(sv);
+      out.push({ date: sv.date, kind: 'venta', id: sv.id, rec: sv, amount: Number(sv.amount), currency: sv.currency, status: sv.mode === 'contado' ? 'contado' : b.status, pending: b.pending });
+    });
+    (state.loans || []).forEach(function (l) {
+      if (!mine(l.person)) return;
+      var st = loanStatus(l, today);
+      out.push({ date: l.date, kind: 'prestamo', id: l.id, rec: l, amount: Number(l.principal), currency: l.currency, status: st.overdue > 0 ? 'vencida' : st.status, pending: st.pending });
+    });
+    (state.debts || []).forEach(function (d) {
+      if (!mine(d.person)) return;
+      var b = debtBalance(d);
+      out.push({ date: d.date, kind: 'deuda', id: d.id, rec: d, amount: Number(d.amount), currency: d.currency, status: b.status, pending: b.pending });
+    });
+    return out.sort(function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : (b.rec.createdAt || 0) - (a.rec.createdAt || 0); });
+  }
+
+  /** Personas cuyo nombre coincide con lo escrito (empieza por → contiene), para sugerir al escribir. */
+  function matchPeople(people, text, limit) {
+    var q = personKey(text);
+    if (!q) return people.slice(0, limit || 6);
+    var starts = [], contains = [];
+    people.forEach(function (p) {
+      if (p.key.indexOf(q) === 0 || p.key.split(' ').some(function (w) { return w.indexOf(q) === 0; })) starts.push(p);
+      else if (p.key.indexOf(q) !== -1) contains.push(p);
+    });
+    return starts.concat(contains).slice(0, limit || 6);
+  }
+
   // =================================================================== Ventas
   /** Venta: de contado está cobrada; por cobrar = total − cobros. */
   function saleBalance(sv) {
@@ -946,6 +1041,7 @@
     custodyOf: custodyOf, accountHoldings: accountHoldings,
     rankByUse: rankByUse, swipeIntent: swipeIntent, pullIntent: pullIntent,
     exchangeQuote: exchangeQuote, exchangeProfit: exchangeProfit, debtBalance: debtBalance, thirdParty: thirdParty, exchangeSettlement: exchangeSettlement,
+    personKey: personKey, peopleIndex: peopleIndex, personHistory: personHistory, matchPeople: matchPeople,
     saleBalance: saleBalance, PERIODS: PERIODS, addPeriod: addPeriod, loanSchedule: loanSchedule, loanPaymentSplit: loanPaymentSplit, loanStatus: loanStatus,
     flowTransactions: flowTransactions,
     samePeg: samePeg,

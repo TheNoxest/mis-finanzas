@@ -58,7 +58,8 @@
       debts: [],               // cuentas por cobrar / por pagar a terceros
       exchanges: [],           // cambios de divisas a terceros
       sales: [],               // ventas (de contado o por cobrar)
-      loans: []                // préstamos (presté / me prestaron) con plan de cuotas
+      loans: [],               // préstamos (presté / me prestaron) con plan de cuotas
+      contacts: []             // fichas de clientes (teléfono, nota); el historial sale de los nombres en cada registro
     };
   }
 
@@ -110,6 +111,7 @@
       exchanges: Array.isArray(data.exchanges) ? data.exchanges : [],
       sales: Array.isArray(data.sales) ? data.sales : [],
       loans: Array.isArray(data.loans) ? data.loans : [],
+      contacts: Array.isArray(data.contacts) ? data.contacts : [],
       deleted: data.deleted && typeof data.deleted === 'object' ? data.deleted : {}   // registros borrados (para sincronizar)
     };
     out.settings.rates[out.settings.baseCurrency] = 1;
@@ -119,7 +121,7 @@
   // ---------- Marcas de cambio (para sincronizar entre dispositivos) ----------
   // Cada registro lleva `_u` = momento de su último cambio. Al guardar se compara con lo guardado
   // antes: lo que cambió recibe la hora actual y lo que desapareció queda en `deleted` (lápida).
-  var COLLECTIONS = ['accounts', 'categories', 'methods', 'transactions', 'investments', 'debts', 'exchanges', 'sales', 'loans'];
+  var COLLECTIONS = ['accounts', 'categories', 'methods', 'transactions', 'investments', 'debts', 'exchanges', 'sales', 'loans', 'contacts'];
   var SINGLES = ['settings', 'profile'];
   var baseline = null;   // huellas de lo último guardado: id → JSON
 

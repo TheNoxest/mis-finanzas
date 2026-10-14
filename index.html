@@ -178,6 +178,7 @@
         <button type="button" role="tab" data-acc-tab="cambios">Cambios</button>
         <button type="button" role="tab" data-acc-tab="ventas">Ventas</button>
         <button type="button" role="tab" data-acc-tab="prestamos">Préstamos</button>
+        <button type="button" role="tab" data-acc-tab="clientes">Clientes</button>
       </div>
       <datalist id="people-list"></datalist>
 
@@ -248,7 +249,7 @@
         <form id="debt-form" class="card form" autocomplete="off" novalidate>
           <h2 id="debt-form-title">Nueva cuenta por cobrar</h2>
           <div class="grid">
-            <label class="span2"><span id="debt-person-label">¿Quién te debe?</span><input name="person" list="people-list" maxlength="60" placeholder="Nombre" required></label>
+            <label class="span2"><span id="debt-person-label">¿Quién te debe?</span><input name="person" data-people autocomplete="off" maxlength="60" placeholder="Nombre" required></label>
             <label class="span2">Concepto<input name="concept" maxlength="80" placeholder="Ej.: préstamo, venta, servicio"></label>
             <label>Monto<input inputmode="decimal" autocomplete="off" name="amount" type="text" required></label>
             <label>Moneda<select name="currency"></select></label>
@@ -279,7 +280,7 @@
           <h2 id="fx-form-title">Nuevo cambio</h2>
           <p class="warning hidden" id="fx-settle-hint"></p>
           <div class="grid">
-            <label class="span2">Cliente<input name="client" list="people-list" maxlength="60" placeholder="Nombre del cliente"></label>
+            <label class="span2">Cliente<input name="client" data-people autocomplete="off" maxlength="60" placeholder="Nombre del cliente"></label>
             <label>Fecha<input name="date" type="date" required></label>
             <label>Estado
               <select name="status">
@@ -366,7 +367,7 @@
             <input type="radio" name="mode" id="sm-credito" value="credito"><label for="sm-credito">Por cobrar</label>
           </div>
           <div class="grid">
-            <label class="span2">Cliente<input name="client" list="people-list" maxlength="60" placeholder="Nombre del cliente"></label>
+            <label class="span2">Cliente<input name="client" data-people autocomplete="off" maxlength="60" placeholder="Nombre del cliente"></label>
             <label class="span2">Qué vendiste<input name="concept" maxlength="80" placeholder="Producto o servicio"></label>
             <label>Cantidad<input inputmode="decimal" autocomplete="off" name="quantity" type="text" value="1"></label>
             <label>Precio unitario<input inputmode="decimal" autocomplete="off" name="unitPrice" type="text" placeholder="0.00"></label>
@@ -396,6 +397,41 @@
         </div>
       </div>
 
+      <!-- ---------- Clientes ---------- -->
+      <div id="acc-panel-clientes" class="acc-panel hidden">
+        <div class="hero compact">
+          <div class="eyebrow">Clientes y personas</div>
+          <div class="hero-value" id="ppl-count">—</div>
+          <div class="stat-row" id="ppl-stats"></div>
+        </div>
+
+        <div class="card hidden" id="person-card"></div>
+
+        <div class="card">
+          <div class="search" role="search" style="margin:0 0 10px">
+            <svg class="ic"><use href="#i-search"/></svg>
+            <input id="ppl-search" type="search" placeholder="Buscar cliente…" autocomplete="off" aria-label="Buscar cliente">
+          </div>
+          <ul class="list" id="ppl-list"></ul>
+        </div>
+
+        <form id="contact-form" class="card form" autocomplete="off" novalidate>
+          <h2 id="contact-form-title">Nuevo cliente</h2>
+          <div class="grid">
+            <label class="span2">Nombre<input name="label" maxlength="60" placeholder="Nombre y apellido" required></label>
+            <label>Teléfono <span class="muted">(opcional)</span><input name="phone" type="tel" maxlength="30" autocomplete="off"></label>
+            <label>Nota <span class="muted">(opcional)</span><input name="note" maxlength="140"></label>
+          </div>
+          <p class="hint" id="contact-hint">No hace falta crear a cada cliente aquí: quien aparezca en un cambio, venta, préstamo o deuda ya está en la lista. Aquí puedes añadir su teléfono o una nota, o cambiarle el nombre en todas sus operaciones.</p>
+          <div class="actions">
+            <button type="button" class="danger hidden" data-action="delete-contact">Eliminar ficha</button>
+            <button type="button" class="ghost hidden" data-action="cancel-contact">Cancelar</button>
+            <button type="submit" class="primary">Guardar cliente</button>
+          </div>
+          <input type="hidden" name="editKey">
+        </form>
+      </div>
+
       <!-- ---------- Préstamos ---------- -->
       <div id="acc-panel-prestamos" class="acc-panel hidden">
         <div class="hero compact">
@@ -423,7 +459,7 @@
             <input type="radio" name="kind" id="lk-recibido" value="recibido"><label for="lk-recibido">Me prestaron</label>
           </div>
           <div class="grid">
-            <label class="span2"><span id="loan-person-label">¿A quién le prestaste?</span><input name="person" list="people-list" maxlength="60" placeholder="Nombre"></label>
+            <label class="span2"><span id="loan-person-label">¿A quién le prestaste?</span><input name="person" data-people autocomplete="off" maxlength="60" placeholder="Nombre"></label>
             <label>Monto prestado<input inputmode="decimal" autocomplete="off" name="principal" type="text" placeholder="0.00"></label>
             <label>Moneda<select name="currency"></select></label>
             <label>Fecha<input name="date" type="date"></label>

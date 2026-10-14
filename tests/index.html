@@ -503,6 +503,37 @@
     eq('El 20/2: L = 2000 − 1000 + 300 + 600 − 200 = 1700; te deben 750 (capital); debes 400 → 2050 (= 2000 + interés 50)',
       C.netWorthSeries(vps, ['2026-02-20'], { today: '2026-05-01' })[0].total, 2050);
 
+    section('Clientes: directorio e historial por persona');
+    eq('Misma persona aunque se escriba distinto: «Ana López» = «ana  lopez» = «ANA-LÓPEZ»',
+      [C.personKey('Ana López'), C.personKey('ana  lopez'), C.personKey('ANA-LÓPEZ'), C.personKey('  ')], ['ana lopez', 'ana lopez', 'ana lopez', '']);
+    var pst2 = { settings: { baseCurrency: 'USD', rates: { USD: 1, USDT: 1, EUR: 1.1 } }, accounts: [], transactions: [], investments: [],
+      exchanges: [{ id: 'e1', date: '2026-10-01', client: 'Ana López', status: 'completada', received: 100, inCurrency: 'USD', delivered: 97, outCurrency: 'USDT',
+          commissionAmount: 3, costs: [], snapshot: { base: 'USD', rates: { USD: 1, USDT: 1 } } },
+        { id: 'e2', date: '2026-10-05', client: 'ana lopez', status: 'pendiente_cobro', received: 50, inCurrency: 'USD', delivered: 45, outCurrency: 'EUR',
+          commissionAmount: 0, costs: [], snapshot: { base: 'USD', rates: { USD: 1, EUR: 1.1 } } }],
+      sales: [{ id: 's1', date: '2026-10-03', client: 'Ana Lopez', concept: 'Camisa', amount: 30, currency: 'USD', mode: 'contado' }],
+      loans: [{ id: 'l1', kind: 'recibido', person: 'Luis', principal: 200, currency: 'USD', date: '2026-09-01', installments: 2, period: 'mensual', interest: { mode: 'ninguno' }, payments: [] }],
+      debts: [{ id: 'd1', kind: 'cobrar', person: 'ANA LÓPEZ', amount: 20, currency: 'USD', date: '2026-09-20', payments: [{ id: 'q1', date: '2026-09-25', amount: 5 }] }],
+      contacts: [{ id: 'c1', name: 'Ana López', phone: '555' }] };
+    var ppl = C.peopleIndex(pst2, '2026-10-14');
+    var ana = ppl.filter(function (p) { return p.key === 'ana lopez'; })[0];
+    eq('Sin ficha se muestra la forma mejor escrita: «carlos mendez», «Carlos Mendez», «Carlos Méndez» → «Carlos Méndez»',
+      C.peopleIndex(Object.assign({}, pst2, { contacts: [], debts: [], loans: [], exchanges: [], sales: [
+        { id: 'a', date: '2026-10-09', client: 'carlos mendez', amount: 1, currency: 'USD', mode: 'contado' },
+        { id: 'b', date: '2026-10-01', client: 'Carlos Méndez', amount: 1, currency: 'USD', mode: 'contado' },
+        { id: 'c', date: '2026-10-02', client: 'Carlos Mendez', amount: 1, currency: 'USD', mode: 'contado' }] }), '2026-10-14')[0].name, 'Carlos Méndez');
+    eq('Ana (escrita de 4 formas) = 1 persona: 2 cambios, 1 venta, 1 deuda; nombre de su ficha; última vez 5/10',
+      [ppl.length, ana.name, ana.exchanges, ana.sales, ana.debts, ana.loans, ana.total, ana.last, ana.contact.phone], [2, 'Ana López', 2, 1, 1, 0, 4, '2026-10-05', '555']);
+    eq('Ana te debe: cambio pendiente 50 + deuda 20 − 5 = 65 · ventas 30 · volumen de cambios 150 · ganancia (solo completados) 100 − 97 = 3',
+      [ana.owesYou, ana.youOwe, ana.salesTotal, ana.fxVolume, ana.fxProfit], [65, 0, 30, 150, 3]);
+    eq('Luis: le debes 200 (préstamo recibido) · el más reciente primero', [ppl[1].name, ppl[1].youOwe, ppl[0].name], ['Luis', 200, 'Ana López']);
+    eq('Historial de Ana, del más reciente: cambio 5/10 (pendiente), cambio 1/10, venta 3/10 … deuda 20/9 (parcial)',
+      C.personHistory(pst2, 'ana lopez', '2026-10-14').map(function (h) { return [h.date, h.kind, h.status]; }),
+      [['2026-10-05', 'cambio', 'pendiente'], ['2026-10-03', 'venta', 'contado'], ['2026-10-01', 'cambio', 'completada'], ['2026-09-20', 'deuda', 'parcial']]);
+    eq('Sugerencias al escribir: «an» → Ana · «lop» → Ana (por apellido) · «lu» → Luis · «xyz» → nada',
+      [C.matchPeople(ppl, 'an').map(function (p) { return p.name; }), C.matchPeople(ppl, 'lop').map(function (p) { return p.name; }),
+       C.matchPeople(ppl, 'lu').map(function (p) { return p.name; }), C.matchPeople(ppl, 'xyz').length], [['Ana López'], ['Ana López'], ['Luis'], 0]);
+
     section('Registro por voz o texto');
     var vctx = { today: '2026-10-14', defaultAccountId: 'efe', currencies: ['USD', 'USDT', 'EUR'],
       accounts: [{ id: 'efe', name: 'Efectivo', currency: 'USD' }, { id: 'bin', name: 'Binance', currency: 'USDT' }, { id: 'eur', name: 'Cuenta en euros', currency: 'EUR' }],
