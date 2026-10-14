@@ -588,7 +588,35 @@
       return { id: 'fx_' + x.id, synthetic: true, type: p >= 0 ? 'ingreso' : 'egreso', amount: Math.abs(p), currency: base,
         categoryId: '__cambios', accountId: x.inAccountId, date: x.date, note: x.client || '' };
     }).filter(function (t) { return t.amount > 0; });
+    // Comisión de una transferencia en la misma moneda (o USDT ↔ USD): lo que se perdió por el camino es un gasto
+    state.transactions.forEach(function (t) {
+      var fee = transferFee(t);
+      if (fee) extra.push({ id: 'tf_' + t.id, synthetic: true, type: fee > 0 ? 'egreso' : 'ingreso', amount: Math.abs(fee),
+        currency: t.toCurrency, categoryId: '__comisiones', accountId: t.fromAccountId, date: t.date, note: t.note || '' });
+    });
     return state.transactions.concat(extra);
+  }
+
+  /** ¿Valen lo mismo? (misma moneda o ancladas: USDT = USDC = USD) */
+  function samePeg(a, b) { return pegOf(a) === pegOf(b); }
+
+  /**
+   * Comisión de una transferencia: enviado − recibido, solo si ambas monedas valen lo mismo.
+   * Ej.: envías 200 USDT y llegan 195 USD → 5 (gasto). Si llega más → negativo (ingreso).
+   * Entre monedas distintas (EUR → USD) la diferencia depende de la tasa: devuelve 0.
+   */
+  function transferFee(t) {
+    if (t.type !== 'transferencia' || !t.toCurrency || !samePeg(t.currency, t.toCurrency)) return 0;
+    var to = Number(t.toAmount);
+    if (!(to > 0)) return 0;
+    return round(Number(t.amount) - to, 2);
+  }
+
+  /** Interpreta un monto escrito: coma o punto decimal y sumas («12,50+3» = 15.5). NaN si no es válido. */
+  function parseAmount(txt) {
+    var t = String(txt == null ? '' : txt).replace(/\s/g, '').replace(/,(?=\d{1,2}$)/, '.').replace(/,/g, '');
+    if (!/^[0-9.+]+$/.test(t)) return NaN;
+    return t.split('+').reduce(function (s, x) { return s + (parseFloat(x) || 0); }, 0);
   }
 
   // =================================================================== Ficha de activo
@@ -733,6 +761,9 @@
     rankByUse: rankByUse, swipeIntent: swipeIntent, pullIntent: pullIntent,
     exchangeQuote: exchangeQuote, exchangeProfit: exchangeProfit, debtBalance: debtBalance, thirdParty: thirdParty,
     flowTransactions: flowTransactions,
+    samePeg: samePeg,
+    transferFee: transferFee,
+    parseAmount: parseAmount,
     seriesDates: seriesDates, monthlyCashflow: monthlyCashflow, categoryBreakdown: categoryBreakdown,
     netWorthSeries: netWorthSeries
   };

@@ -399,6 +399,23 @@
     eq('Arrastrar ↓ 100 px desde arriba = actualizar; no si no estás arriba ni si es diagonal',
       [C.pullIntent(100, 5, true), C.pullIntent(100, 5, false), C.pullIntent(60, 0, true), C.pullIntent(100, 80, true)], [true, false, false, false]);
 
+    section('Transferencias Binance USDT → efectivo USD (comisión)');
+    eq('Montos escritos: «195,50» = 195.5 · «1,234.5» = 1234.5 · «12+3,5» = 15.5 · «abc» = NaN',
+      [C.parseAmount('195,50'), C.parseAmount('1,234.5'), C.parseAmount('12+3,5'), isNaN(C.parseAmount('abc'))], [195.5, 1234.5, 15.5, true]);
+    var trf = { id: 'tf1', type: 'transferencia', date: '2026-10-14', amount: 200, currency: 'USDT', fromAccountId: 'bin', toAccountId: 'efe', toAmount: 195, toCurrency: 'USD' };
+    eq('Envías 200 USDT, llegan 195 USD → comisión 200 − 195 = 5', C.transferFee(trf), 5);
+    eq('Llegan 200 USD (1 USDT = 1 USD) → sin comisión', C.transferFee(Object.assign({}, trf, { toAmount: 200 })), 0);
+    eq('Llegan 201,50 → 1,50 de más (negativo = ingreso)', C.transferFee(Object.assign({}, trf, { toAmount: 201.5 })), -1.5);
+    eq('EUR → USD no cuenta como comisión (depende de la tasa)', C.transferFee(Object.assign({}, trf, { currency: 'EUR', toAmount: 110 })), 0);
+    var trs = { settings: { baseCurrency: 'USD', rates: { USD: 1, USDT: 1, EUR: 1.1 } },
+      accounts: [{ id: 'bin', currency: 'USDT', initialBalance: 1000 }, { id: 'efe', currency: 'USD', initialBalance: 0 }],
+      transactions: [trf], investments: [], exchanges: [], debts: [] };
+    var trb = C.accountBalances(trs);
+    eq('Saldos: Binance 1000 − 200 = 800 USDT; efectivo 0 + 195 = 195 USD', [trb[0].balance, trb[1].balance], [800, 195]);
+    var trFlows = C.flowTransactions(trs).filter(function (t) { return t.categoryId === '__comisiones'; });
+    eq('La comisión aparece como gasto de 5 USD en «Comisiones de transferencia»', trFlows.map(function (t) { return [t.type, t.amount, t.currency]; }), [['egreso', 5, 'USD']]);
+    eq('Gastos del periodo = 5 (la transferencia en sí no es gasto)', C.summarizeTransactions(C.flowTransactions(trs), trs.settings.rates).expense, 5);
+
     section('Migración de datos v1 → v2');
     var v1 = { version: 1, settings: { baseCurrency: 'USD', rates: { USD: 1, EUR: 1.1 } }, categories: [], methods: [],
       transactions: [{ id: 't1', type: 'ingreso', amount: 10, currency: 'USD', date: '2026-01-01' }, { id: 't2', type: 'egreso', amount: 5, currency: 'EUR', date: '2026-01-02' }],

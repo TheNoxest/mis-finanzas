@@ -122,7 +122,7 @@
 
         <label class="amount-field">
           <span class="sr-only">Monto</span>
-          <input name="amount" type="number" inputmode="decimal" step="any" min="0" placeholder="0.00" required aria-label="Monto">
+          <input name="amount" type="text" inputmode="decimal" placeholder="0.00" required aria-label="Monto">
           <span class="amount-cur" id="tx-cur">USD</span>
         </label>
 
@@ -132,7 +132,7 @@
           <label class="only-transfer">Desde<select name="fromAccountId"></select></label>
           <label class="only-transfer">Hacia<select name="toAccountId"></select></label>
           <label class="only-transfer only-fx span2 hidden">Monto recibido <span class="muted" id="to-cur"></span>
-            <input name="toAmount" type="number" inputmode="decimal" step="any" min="0">
+            <input name="toAmount" type="text" inputmode="decimal">
           </label>
           <label class="only-flow">Método de pago<select name="methodId"></select></label>
           <label>Fecha<input name="date" type="date" required></label>

@@ -86,6 +86,7 @@
   function byId(list, id) { for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i]; return null; }
   function catName(id) {
     if (id === '__cambios') return 'Cambios de divisa';
+    if (id === '__comisiones') return 'Comisiones de transferencia';
     var c = byId(state.categories, id); return c ? c.name : 'Sin categoría';
   }
   /** Movimientos para informes: los tuyos + ganancia de cambios de divisas completados. */
@@ -352,8 +353,10 @@
       av = '<span class="avatar tr">' + icon('i-swap') + '</span>';
       title = 'Transferencia';
       sub = fmtDate(t.date) + ' · ' + esc(accName(t.fromAccountId)) + ' → ' + esc(accName(t.toAccountId));
+      var fee = C.transferFee(t);
       right = fmtMoney(t.amount, t.currency) +
-        (t.toCurrency && t.toCurrency !== t.currency ? '<div class="sub">→ ' + fmtMoney(t.toAmount, t.toCurrency) + '</div>' : '');
+        (t.toCurrency && (t.toCurrency !== t.currency || fee) ? '<div class="sub">→ ' + fmtMoney(t.toAmount, t.toCurrency) + '</div>' : '') +
+        (fee ? '<div class="sub">' + (fee > 0 ? 'comisión −' : 'extra +') + fmtMoney(Math.abs(fee), t.toCurrency) + '</div>' : '');
     } else {
       var isIn = t.type === 'ingreso';
       av = '<span class="avatar ' + (isIn ? 'in' : 'out') + '">' + icon(isIn ? 'i-in' : 'i-out') + '</span>';
@@ -400,17 +403,27 @@
     var from = account(isTr ? f.fromAccountId.value : f.accountId.value);
     var to = account(f.toAccountId.value);
     $('#tx-cur').textContent = from ? from.currency : '';
-    var fx = isTr && from && to && from.currency !== to.currency;
+    // «Monto recibido» siempre en transferencias: entre monedas distintas para la tasa real,
+    // y en la misma moneda (o USDT ↔ USD) para anotar la comisión si llegó menos.
+    var fx = isTr && from && to && from.id !== to.id;
+    var peg = fx && C.samePeg(from.currency, to.currency);
     $('.only-fx', f).classList.toggle('hidden', !fx);
-    $('#to-cur').textContent = to ? '(' + to.currency + ')' : '';
+    $('#to-cur').textContent = to ? '(' + to.currency + ')' + (peg ? ' · opcional' : '') : '';
     $('#tx-submit').textContent = f.editId.value ? 'Actualizar' : isTr ? 'Transferir' : f.type.value === 'ingreso' ? 'Guardar ingreso' : 'Guardar gasto';
 
     // Vista previa: conversión a la moneda base o estimación de la transferencia
-    var amt = parseFloat(f.amount.value), txt = '';
+    var amt = parseAmount(f.amount.value), txt = '';
+    f.toAmount.placeholder = amt > 0 && fx ? String(C.convert(amt, from.currency, to.currency, rates())) : '';
     if (amt > 0 && from) {
-      if (fx) {
+      if (peg) {
+        var got = parseAmount(f.toAmount.value), fee = C.round(amt - got, 2);
+        var same = from.currency === to.currency ? '' : '1 ' + from.currency + ' = 1 ' + to.currency + '. ';
+        if (!(got > 0)) txt = same + 'Llegan ' + fmtMoney(amt, to.currency) + '. Si te cobraron comisión, escribe en «Monto recibido» lo que realmente llegó.';
+        else if (fee > 0) txt = same + 'Comisión: ' + fmtMoney(fee, to.currency) + ' — se cuenta como gasto en «Comisiones de transferencia».';
+        else if (fee < 0) txt = same + 'Llegó ' + fmtMoney(-fee, to.currency) + ' más de lo enviado — se cuenta como ingreso.';
+        else txt = same + 'Sin comisión.';
+      } else if (fx) {
         var est = C.convert(amt, from.currency, to.currency, rates());
-        f.toAmount.placeholder = isNaN(est) ? '' : String(est);
         txt = 'Si lo dejas vacío se usará la tasa actual: ' + fmtMoney(est, to.currency) + '. Escribe lo que realmente llegó.';
       } else if (!isTr && from.currency !== base()) {
         txt = '≈ ' + fmtMoney(C.toBase(amt, from.currency, rates()), base()) + ' (tasa ' + fmtNum(rates()[from.currency], 0, 10) + ')';
@@ -433,7 +446,7 @@
   function onTxSubmit(e) {
     e.preventDefault();
     var f = e.target;
-    var amount = parseFloat(f.amount.value);
+    var amount = parseAmount(f.amount.value);
     var type = f.type.value;
     if (!(amount > 0)) { toast('Ingresa un monto mayor a 0'); f.amount.focus(); return; }
     if (!f.date.value) { toast('Elige una fecha'); return; }
@@ -443,9 +456,12 @@
     if (type === 'transferencia') {
       var from = account(f.fromAccountId.value), to = account(f.toAccountId.value);
       if (!from || !to || from.id === to.id) { toast('Elige dos cuentas distintas'); return; }
-      var toAmount = from.currency === to.currency ? amount : parseFloat(f.toAmount.value);
-      if (from.currency !== to.currency && !(toAmount > 0)) toAmount = C.convert(amount, from.currency, to.currency, rates());
+      // Vacío → lo mismo (misma moneda o USDT = USD) o la tasa actual; escrito → lo que realmente llegó
+      var toAmount = parseAmount(f.toAmount.value);
+      if (f.toAmount.value.trim() && !(toAmount > 0)) { toast('Revisa el monto recibido'); f.toAmount.focus(); return; }
+      if (!(toAmount > 0)) toAmount = C.convert(amount, from.currency, to.currency, rates());
       if (!(toAmount > 0)) { toast('Indica el monto recibido en ' + to.currency); return; }
+      if (C.samePeg(from.currency, to.currency) && toAmount > amount * 1.5 && !confirm('Llegan ' + fmtMoney(toAmount, to.currency) + ' pero enviaste ' + fmtMoney(amount, from.currency) + '. ¿Es correcto?')) return;
       data = { type: type, date: f.date.value, amount: C.round(amount, 2), currency: from.currency,
         fromAccountId: from.id, toAccountId: to.id, toAmount: C.round(toAmount, 2), toCurrency: to.currency, note: f.note.value.trim() };
       state.settings.last.fromAccountId = from.id; state.settings.last.toAccountId = to.id;
@@ -470,7 +486,8 @@
     } else {
       data.id = S.uid(); data.createdAt = Date.now();
       state.transactions.push(data);
-      toast(type === 'transferencia' ? 'Transferencia registrada' :
+      var trFee = C.transferFee(data);
+      toast(type === 'transferencia' ? 'Transferencia registrada' + (trFee > 0 ? ' · comisión ' + fmtMoney(trFee, data.toCurrency) : '') :
         (type === 'ingreso' ? 'Ingreso' : 'Gasto') + ' guardado: ' + fmtMoney(data.amount, data.currency));
     }
     resetTxForm();
@@ -487,7 +504,7 @@
     f.editId.value = t.id; f.amount.value = t.amount; f.date.value = t.date; f.note.value = t.note || '';
     if (t.type === 'transferencia') {
       f.fromAccountId.value = t.fromAccountId; f.toAccountId.value = t.toAccountId;
-      f.toAmount.value = t.toCurrency !== t.currency ? t.toAmount : '';
+      f.toAmount.value = t.toCurrency !== t.currency || C.transferFee(t) ? t.toAmount : '';
     } else {
       f.accountId.value = t.accountId; f.categoryId.value = t.categoryId; f.methodId.value = t.methodId || '';
     }
@@ -2614,11 +2631,7 @@
     if (document.activeElement) document.activeElement.blur();
   }
   /** Interpreta el monto escrito: acepta coma o punto decimal y sumas («12,50+3»). */
-  function parseAmount(txt) {
-    var t = String(txt || '').replace(/\s/g, '').replace(/,(?=\d{1,2}$)/, '.').replace(/,/g, '');
-    if (!/^[0-9.+]+$/.test(t)) return NaN;
-    return t.split('+').reduce(function (s, x) { return s + (parseFloat(x) || 0); }, 0);
-  }
+  function parseAmount(txt) { return C.parseAmount(txt); }
   function onQuickSubmit(e) {
     e.preventDefault();
     var f = e.target;
