@@ -373,6 +373,24 @@
         <ul class="list assets" id="pf-list"></ul>
       </div>
 
+      <div class="card" id="ideas-card">
+        <div class="card-head"><h2>Sugeridos para ti</h2><span class="muted small" id="ideas-profile"></span></div>
+        <div id="ideas-body"></div>
+        <p class="disclaimer" style="margin:10px 0 0">Ideas para investigar, generadas con reglas fijas según tu portafolio y tu perfil. No son una recomendación de compra ni asesoría financiera.</p>
+      </div>
+
+      <div class="card" id="explore-card">
+        <div class="card-head wrap"><h2>Explorar activos</h2>
+          <div class="seg seg-sm" role="radiogroup" aria-label="Tipo de activo">
+            <input type="radio" name="ex-tab" id="ex-cripto" value="cripto" checked><label for="ex-cripto">Cripto</label>
+            <input type="radio" name="ex-tab" id="ex-etf" value="etf"><label for="ex-etf">ETF</label>
+          </div>
+        </div>
+        <label class="check hidden" id="ex-fit-wrap"><input type="checkbox" id="ex-fit"><span id="ex-fit-label">Solo los que encajan con mi perfil</span></label>
+        <ul class="list explore-list" id="explore-list"></ul>
+        <p class="hint" id="explore-note"></p>
+      </div>
+
       <details class="card form" id="inv-details">
         <summary><h2 id="inv-form-title">Registrar compra o venta</h2></summary>
         <form id="inv-form" autocomplete="off" novalidate>
@@ -466,7 +484,10 @@
         <div class="stat-row" id="ad-stats"></div>
       </div>
 
+      <div class="card hidden" id="ad-risk"></div>
       <div class="card" id="ad-position"></div>
+      <div class="card hidden" id="ad-info"></div>
+      <div class="card hidden" id="ad-news"></div>
     </section>
 
     <!-- ================= ANÁLISIS ================= -->

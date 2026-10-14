@@ -432,9 +432,146 @@
     return { close: function () { closed = true; clearInterval(timer); } };
   }
 
+  // =========================================================================
+  // Explorar activos: listas, riesgo, ficha financiera y noticias.
+  // Se guardan en una caché propia de este dispositivo (no se sincroniza).
+  // =========================================================================
+  var MKT_KEY = 'misFinanzas.market';
+  function cacheAll() { try { return JSON.parse(root.localStorage.getItem(MKT_KEY)) || {}; } catch (e) { return {}; } }
+  function cacheGet(k, maxAge) { var c = cacheAll()[k]; return c && Date.now() - c.at < maxAge ? c.data : null; }
+  function cacheSet(k, data) {
+    var all = cacheAll(); all[k] = { at: Date.now(), data: data };
+    // Limpieza: se quitan entradas de más de 2 días
+    Object.keys(all).forEach(function (x) { if (Date.now() - all[x].at > 2 * 86400000) delete all[x]; });
+    try { root.localStorage.setItem(MKT_KEY, JSON.stringify(all)); } catch (e) { /* sin espacio: se ignora */ }
+  }
+
+  /** Criptos de mayor capitalización (CoinGecko) que se pueden seguir en Binance. Caché 30 min. */
+  async function fetchTopCryptos(n) {
+    var hit = cacheGet('top', 30 * 60000);
+    if (hit) return hit;
+    var markets = await getJSON('https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=40&page=1', 12000);
+    var bin = (await listCryptoSymbols()).map(function (x) { return x.ticker; });
+    var list = root.Insights.pickCryptos(markets, bin, n || 12);
+    if (list.length) cacheSet('top', list);
+    return list;
+  }
+
+  /** Riesgo con 1 año de cierres diarios de Binance. Caché 12 h. */
+  async function fetchRisk(ticker) {
+    var k = 'risk|' + ticker.toUpperCase();
+    var hit = cacheGet(k, 12 * 3600000);
+    if (hit) return hit;
+    var rows = await fetchKlines(ticker, '1d', { limit: 366 });
+    var st = root.Insights.riskStats(rows.map(function (r) { return r[1]; }), 365);
+    if (st) cacheSet(k, st);
+    return st;
+  }
+
+  /** Id de CoinGecko de un símbolo (el de mayor capitalización). */
+  async function coinId(ticker) {
+    var t = ticker.toUpperCase(), k = 'cgid|' + t, hit = cacheGet(k, 7 * 86400000);
+    if (hit) return hit;
+    var d = await getJSON('https://api.coingecko.com/api/v3/search?query=' + encodeURIComponent(t), 8000);
+    var c = (d.coins || []).filter(function (x) { return String(x.symbol).toUpperCase() === t; })
+      .sort(function (a, b) { return (a.market_cap_rank || 1e9) - (b.market_cap_rank || 1e9); })[0];
+    if (!c) throw new Error('CoinGecko no reconoce ' + t);
+    cacheSet(k, c.id);
+    return c.id;
+  }
+  function firstSentences(html, n) {
+    var txt = String(html || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+    var parts = txt.match(/[^.!?]+[.!?]+/g) || (txt ? [txt] : []);
+    return parts.slice(0, n || 2).join(' ').trim();
+  }
+  /** Datos clave de una cripto (CoinGecko). Caché 6 h. */
+  async function fetchCoinInfo(ticker) {
+    var k = 'cinfo|' + ticker.toUpperCase(), hit = cacheGet(k, 6 * 3600000);
+    if (hit) return hit;
+    var id = await coinId(ticker);
+    var d = await getJSON('https://api.coingecko.com/api/v3/coins/' + encodeURIComponent(id) +
+      '?localization=true&tickers=false&market_data=true&community_data=false&developer_data=false&sparkline=false', 12000);
+    var m = d.market_data || {}, usd = function (o) { return o && o.usd != null ? Number(o.usd) : null; };
+    var info = {
+      id: id, name: d.name, rank: d.market_cap_rank || null,
+      marketCap: usd(m.market_cap), volume24h: usd(m.total_volume),
+      ath: usd(m.ath), athChange: m.ath_change_percentage ? Number(m.ath_change_percentage.usd) : null,
+      athDate: m.ath_date && m.ath_date.usd ? String(m.ath_date.usd).slice(0, 10) : null,
+      circulating: m.circulating_supply || null, maxSupply: m.max_supply || null, totalSupply: m.total_supply || null,
+      change7d: m.price_change_percentage_7d != null ? Number(m.price_change_percentage_7d) : null,
+      change30d: m.price_change_percentage_30d != null ? Number(m.price_change_percentage_30d) : null,
+      change1y: m.price_change_percentage_1y != null ? Number(m.price_change_percentage_1y) : null,
+      categories: (d.categories || []).filter(Boolean).slice(0, 3),
+      description: firstSentences((d.description || {}).es || (d.description || {}).en, 2),
+      homepage: d.links && d.links.homepage ? d.links.homepage.filter(Boolean)[0] || null : null,
+      source: 'CoinGecko'
+    };
+    cacheSet(k, info);
+    return info;
+  }
+
+  /** Datos clave de una acción/ETF (Finnhub: perfil + métricas). Caché 6 h. */
+  async function fetchStockInfo(ticker, key) {
+    if (!key) throw new Error('Falta la API key de Finnhub');
+    var k = 'sinfo|' + ticker.toUpperCase(), hit = cacheGet(k, 6 * 3600000);
+    if (hit) return hit;
+    var tk = encodeURIComponent(ticker), tok = encodeURIComponent(key);
+    var res = await Promise.all([
+      getJSON('https://finnhub.io/api/v1/stock/profile2?symbol=' + tk + '&token=' + tok).catch(function () { return {}; }),
+      getJSON('https://finnhub.io/api/v1/stock/metric?symbol=' + tk + '&metric=all&token=' + tok).catch(function () { return {}; })
+    ]);
+    var p = res[0] || {}, mt = (res[1] && res[1].metric) || {};
+    var num = function (v) { return v == null || !isFinite(v) ? null : Number(v); };
+    var info = {
+      name: p.name || ticker, industry: p.finnhubIndustry || null, country: p.country || null, exchange: p.exchange || null,
+      marketCap: num(p.marketCapitalization) != null ? num(p.marketCapitalization) * 1e6 : null, ipo: p.ipo || null, weburl: p.weburl || null,
+      high52: num(mt['52WeekHigh']), low52: num(mt['52WeekLow']), beta: num(mt.beta),
+      pe: num(mt.peTTM != null ? mt.peTTM : mt.peBasicExclExtraTTM), dividendYield: num(mt.dividendYieldIndicatedAnnual),
+      ret52: num(mt['52WeekPriceReturnDaily']), source: 'Finnhub'
+    };
+    cacheSet(k, info);
+    return info;
+  }
+
+  /**
+   * Noticias (Finnhub, con la API key gratuita). Acciones/ETF: noticias de la empresa (30 días).
+   * Cripto: noticias cripto generales que mencionan el activo; si ninguna lo menciona, las más recientes.
+   * Devuelve { items:[{headline, source, url, datetime, summary}], general:bool }
+   */
+  async function fetchNews(type, ticker, name, key) {
+    if (!key) throw new Error('Falta la API key de Finnhub');
+    var k = 'news|' + type + '|' + ticker.toUpperCase(), hit = cacheGet(k, 30 * 60000);
+    if (hit) return hit;
+    var tok = encodeURIComponent(key), out;
+    var clean = function (list) {
+      return (list || []).filter(function (n) { return n && n.headline && /^https?:\/\//.test(n.url || ''); }).map(function (n) {
+        return { headline: n.headline, source: n.source || '', url: n.url, datetime: (n.datetime || 0) * 1000, summary: firstSentences(n.summary, 1) };
+      });
+    };
+    if (type === 'cripto') {
+      var all = clean(await getJSON('https://finnhub.io/api/v1/news?category=crypto&token=' + tok, 10000));
+      var words = [ticker.toLowerCase()].concat(name && name.toLowerCase() !== ticker.toLowerCase() ? [name.toLowerCase()] : []);
+      var mine = all.filter(function (n) {
+        var t = (n.headline + ' ' + n.summary).toLowerCase();
+        return words.some(function (w) { return new RegExp('(^|[^a-z0-9])' + w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '([^a-z0-9]|$)').test(t); });
+      });
+      out = { items: (mine.length ? mine : all).slice(0, 6), general: !mine.length };
+    } else {
+      var to = new Date(), from = new Date(Date.now() - 30 * 86400000);
+      var iso = function (d) { return d.toISOString().slice(0, 10); };
+      out = { items: clean(await getJSON('https://finnhub.io/api/v1/company-news?symbol=' + encodeURIComponent(ticker) + '&from=' + iso(from) + '&to=' + iso(to) + '&token=' + tok, 10000)).slice(0, 6), general: false };
+    }
+    cacheSet(k, out);
+    return out;
+  }
+  /** Enlace a Google Noticias (siempre disponible, sin clave). */
+  function newsSearchUrl(q) { return 'https://news.google.com/search?q=' + encodeURIComponent(q) + '&hl=es-419&gl=US&ceid=US:es-419'; }
+
   root.Market = {
     listCryptoSymbols: listCryptoSymbols, fetchKlines: fetchKlines, fetchCryptoMeta: fetchCryptoMeta,
     fetchStockMeta: fetchStockMeta, searchStocks: searchStocks, fetchStockCandles: fetchStockCandles,
-    liveCrypto: liveCrypto, liveStock: liveStock
+    liveCrypto: liveCrypto, liveStock: liveStock,
+    fetchTopCryptos: fetchTopCryptos, fetchRisk: fetchRisk, fetchCoinInfo: fetchCoinInfo, fetchStockInfo: fetchStockInfo,
+    fetchNews: fetchNews, newsSearchUrl: newsSearchUrl
   };
 })(this);
