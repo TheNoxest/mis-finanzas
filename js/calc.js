@@ -615,11 +615,40 @@
     return round(Number(t.amount) - to, 2);
   }
 
-  /** Interpreta un monto escrito: coma o punto decimal y sumas («12,50+3» = 15.5). NaN si no es válido. */
+  /**
+   * Número escrito con coma o punto decimal (NaN si no es válido). Acepta signo «-».
+   *  · una sola coma o un solo punto = decimales: «1,5» = 1.5 · «95,5» = 95.5 · «0,00012» = 0.00012 · «1.5» = 1.5
+   *  · con los dos, el último es el decimal: «1.234,56» = 1234.56 · «1,234.56» = 1234.56
+   *  · varios iguales = miles: «1.234.567» = 1234567 · «1,234,567» = 1234567
+   */
+  function parseNum(txt) {
+    var t = String(txt == null ? '' : txt).replace(/[\s ]/g, '');
+    var neg = t.charAt(0) === '-';
+    if (neg) t = t.slice(1);
+    if (!/^[0-9.,]*[0-9][0-9.,]*$/.test(t)) return NaN;
+    var commas = t.split(',').length - 1, dots = t.split('.').length - 1;
+    if (commas && dots) {
+      var dec = t.lastIndexOf(',') > t.lastIndexOf('.') ? ',' : '.';
+      t = t.split(dec === ',' ? '.' : ',').join('');
+      if (t.split(dec).length > 2) return NaN;
+      t = t.replace(dec, '.');
+    } else if (commas) t = commas > 1 ? t.split(',').join('') : t.replace(',', '.');
+    else if (dots > 1) t = t.split('.').join('');
+    var v = Number(t);
+    return isFinite(v) ? (neg ? -v : v) : NaN;
+  }
+
+  /** Monto escrito: como `parseNum` (sin signo) y con sumas («12,50+3» = 15.5). NaN si no es válido. */
   function parseAmount(txt) {
-    var t = String(txt == null ? '' : txt).replace(/\s/g, '').replace(/,(?=\d{1,2}$)/, '.').replace(/,/g, '');
-    if (!/^[0-9.+]+$/.test(t)) return NaN;
-    return t.split('+').reduce(function (s, x) { return s + (parseFloat(x) || 0); }, 0);
+    var parts = String(txt == null ? '' : txt).replace(/[\s ]/g, '').split('+');
+    var total = 0;
+    for (var i = 0; i < parts.length; i++) {
+      if (!parts[i] && i > 0) continue;            // «12+» mientras se escribe
+      var v = parseNum(parts[i]);
+      if (!(v >= 0)) return NaN;
+      total += v;
+    }
+    return total;
   }
 
   // =================================================================== Ficha de activo
@@ -766,7 +795,7 @@
     flowTransactions: flowTransactions,
     samePeg: samePeg,
     transferFee: transferFee,
-    parseAmount: parseAmount,
+    parseAmount: parseAmount, parseNum: parseNum,
     seriesDates: seriesDates, monthlyCashflow: monthlyCashflow, categoryBreakdown: categoryBreakdown,
     netWorthSeries: netWorthSeries
   };

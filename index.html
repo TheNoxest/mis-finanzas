@@ -197,7 +197,7 @@
             <select name="kind"></select>
           </label>
           <label>Moneda<select name="currency"></select></label>
-          <label class="span2">Saldo inicial<input name="initialBalance" type="number" inputmode="decimal" step="any" placeholder="0.00"></label>
+          <label class="span2">Saldo inicial<input inputmode="decimal" autocomplete="off" name="initialBalance" type="text" placeholder="0.00"></label>
         </div>
         <p class="hint">El saldo inicial es lo que había en la cuenta antes de empezar a registrar. Luego el saldo se calcula solo.</p>
         <div class="actions">
@@ -234,7 +234,7 @@
           <div class="progress" id="pay-progress"></div>
           <ul class="list" id="pay-list"></ul>
           <form class="grid pay-form" id="pay-form" autocomplete="off" novalidate>
-            <label>Monto<input name="amount" type="number" inputmode="decimal" step="any" min="0"></label>
+            <label>Monto<input inputmode="decimal" autocomplete="off" name="amount" type="text"></label>
             <label>Fecha<input name="date" type="date"></label>
             <label class="span2"><span id="pay-acc-label">Entra en</span><select name="accountId"></select></label>
             <label class="span2">Nota<input name="note" maxlength="100" placeholder="Opcional"></label>
@@ -247,7 +247,7 @@
           <div class="grid">
             <label class="span2"><span id="debt-person-label">¿Quién te debe?</span><input name="person" list="people-list" maxlength="60" placeholder="Nombre" required></label>
             <label class="span2">Concepto<input name="concept" maxlength="80" placeholder="Ej.: préstamo, venta, servicio"></label>
-            <label>Monto<input name="amount" type="number" inputmode="decimal" step="any" min="0" required></label>
+            <label>Monto<input inputmode="decimal" autocomplete="off" name="amount" type="text" required></label>
             <label>Moneda<select name="currency"></select></label>
             <label>Fecha<input name="date" type="date" required></label>
             <label>Vence <span class="muted">(opcional)</span><input name="dueDate" type="date"></label>
@@ -288,7 +288,7 @@
 
           <h3>El cliente te envía</h3>
           <div class="grid">
-            <label>Monto a cambiar<input name="amount" type="number" inputmode="decimal" step="any" min="0" placeholder="0.00"></label>
+            <label>Monto a cambiar<input inputmode="decimal" autocomplete="off" name="amount" type="text" placeholder="0.00"></label>
             <label>Moneda<select name="inCurrency"></select></label>
             <label class="span2">Entra en<select name="inAccountId"></select></label>
           </div>
@@ -296,7 +296,7 @@
           <h3>Tú entregas</h3>
           <div class="grid">
             <label>Moneda<select name="outCurrency"></select></label>
-            <label><span id="fx-rate-label">Tasa</span><input name="rate" type="number" inputmode="decimal" step="any" min="0"></label>
+            <label><span id="fx-rate-label">Tasa</span><input inputmode="decimal" autocomplete="off" name="rate" type="text"></label>
             <label class="span2">Sale de<select name="outAccountId"></select></label>
           </div>
           <div class="rate-help hint" id="fx-rate-help"></div>
@@ -309,7 +309,7 @@
                 <option value="fijo">Monto fijo</option>
               </select>
             </label>
-            <label><span id="fx-com-label">Porcentaje</span><input name="comValue" type="number" inputmode="decimal" step="any" min="0" placeholder="0"></label>
+            <label><span id="fx-com-label">Porcentaje</span><input inputmode="decimal" autocomplete="off" name="comValue" type="text" placeholder="0"></label>
             <label class="hidden" id="fx-com-cur">Moneda<select name="comCurrency"></select></label>
             <label class="span2">Cómo se cobra
               <select name="comCharge">
@@ -321,7 +321,7 @@
 
           <div class="quote" id="fx-quote"></div>
           <label class="deliver">Monto a entregar <span class="muted" id="fx-deliver-hint">(se calcula solo)</span>
-            <input name="delivered" type="number" inputmode="decimal" step="any" min="0">
+            <input inputmode="decimal" autocomplete="off" name="delivered" type="text">
           </label>
 
           <h3 class="row-between">Costos que pagas tú <button type="button" class="link" data-action="add-cost">+ Añadir costo</button></h3>
@@ -409,10 +409,10 @@
               </select>
             </label>
             <label>Ticker<input name="ticker" type="text" maxlength="20" placeholder="AAPL, BTC…" required list="ticker-list"></label>
-            <label>Cantidad<input name="quantity" type="number" inputmode="decimal" step="any" min="0" required></label>
-            <label>Precio unitario<input name="price" type="number" inputmode="decimal" step="any" min="0" required></label>
+            <label>Cantidad<input inputmode="decimal" autocomplete="off" name="quantity" type="text" required></label>
+            <label>Precio unitario<input inputmode="decimal" autocomplete="off" name="price" type="text" required></label>
             <label>Moneda<select name="currency"></select></label>
-            <label>Comisión<input name="fee" type="number" inputmode="decimal" step="any" min="0" placeholder="0"></label>
+            <label>Comisión<input inputmode="decimal" autocomplete="off" name="fee" type="text" placeholder="0"></label>
             <label>Fecha<input name="date" type="date" required></label>
             <label><span id="inv-acc-label">Pagado desde</span><select name="accountId"></select></label>
             <label>Guardado en<select name="custodyAccountId"></select></label>
@@ -619,7 +619,7 @@
             </select>
           </label>
           <label>Meta de ahorro (% de los ingresos)
-            <input name="savingsGoal" type="number" min="1" max="90" step="1" value="20" inputmode="numeric">
+            <input inputmode="decimal" autocomplete="off" name="savingsGoal" type="text" value="20">
           </label>
         </div>
         <div class="actions">
@@ -665,7 +665,7 @@
         <ul class="list editable" id="rates-list"></ul>
         <form class="add-row" id="add-currency">
           <input name="code" placeholder="Moneda (GBP, MXN…)" maxlength="10" required list="currency-codes" autocomplete="off">
-          <input name="rate" type="number" step="any" min="0" placeholder="Tasa (vacío = en vivo)">
+          <input inputmode="decimal" autocomplete="off" name="rate" type="text" placeholder="Tasa (vacío = en vivo)">
           <button class="primary" type="submit">Añadir</button>
         </form>
         <datalist id="currency-codes">
@@ -798,7 +798,7 @@
       <h2 id="price-title">Precio manual</h2>
       <p class="hint" id="price-help"></p>
       <label>Precio por unidad <span class="muted" id="price-cur"></span>
-        <input name="price" type="number" step="any" min="0" inputmode="decimal">
+        <input inputmode="decimal" autocomplete="off" name="price" type="text">
       </label>
       <div class="actions">
         <button value="cancel" formnovalidate class="ghost">Cancelar</button>

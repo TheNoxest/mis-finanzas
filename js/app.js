@@ -604,7 +604,7 @@
     var f = e.target;
     var name = f.label.value.trim();
     if (!name) { toast('Ponle un nombre a la cuenta'); f.label.focus(); return; }
-    var initial = f.initialBalance.value === '' ? 0 : parseFloat(f.initialBalance.value);
+    var initial = f.initialBalance.value === '' ? 0 : num(f.initialBalance.value);
     if (!isFinite(initial)) { toast('Saldo inicial inválido'); return; }
     var data = { name: name, kind: f.kind.value, currency: f.currency.value, initialBalance: C.round(initial, 2) };
     // Moneda nueva: se añade y se conecta a su tasa antes de guardar
@@ -726,7 +726,7 @@
 
   function updateInvPreview() {
     var f = $('#inv-form');
-    var q = parseFloat(f.quantity.value), p = parseFloat(f.price.value), fee = parseFloat(f.fee.value) || 0;
+    var q = num(f.quantity.value), p = num(f.price.value), fee = num(f.fee.value) || 0;
     if (q > 0 && p >= 0) {
       var op = { side: f.side.value, quantity: q, price: p, fee: fee };
       var total = C.operationTotal(op);
@@ -754,7 +754,7 @@
     e.preventDefault();
     var f = e.target;
     var ticker = f.ticker.value.trim().toUpperCase();
-    var q = parseFloat(f.quantity.value), p = parseFloat(f.price.value), fee = parseFloat(f.fee.value) || 0;
+    var q = num(f.quantity.value), p = num(f.price.value), fee = num(f.fee.value) || 0;
     if (!ticker) { toast('Ingresa el ticker'); f.ticker.focus(); return; }
     if (!(q > 0)) { toast('La cantidad debe ser mayor a 0'); f.quantity.focus(); return; }
     if (f.price.value === '' || !(p >= 0)) { toast('Ingresa el precio'); f.price.focus(); return; }
@@ -889,7 +889,7 @@
       return '<li class="rate-row"><div class="main"><div class="title">1 ' + esc(c) + ' =</div><div class="sub">' + esc(srcTxt) + '</div></div>' +
         (pegged || pegToOther
           ? '<span class="rate-fixed">' + fmtNum(r, 0, 6) + '</span>'
-          : '<input type="number" step="any" min="0" value="' + C.round(r, 8) + '" data-rate="' + esc(c) + '" style="max-width:130px"' + (isBase ? ' disabled' : '') + ' aria-label="Tasa ' + esc(c) + '" title="' + esc(inv) + '">') +
+          : '<input type="text" inputmode="decimal" autocomplete="off" value="' + C.round(r, 8) + '" data-rate="' + esc(c) + '" style="max-width:130px"' + (isBase ? ' disabled' : '') + ' aria-label="Tasa ' + esc(c) + '" title="' + esc(inv) + '">') +
         '<span class="muted">' + esc(b) + '</span>' +
         (isBase ? '<span class="tag">Base</span>' : C.PEGGED[c] ? '<span class="tag ok">1:1</span>' :
           '<button type="button" class="chip" data-lock="' + esc(c) + '" title="' + (locked ? 'Fijada a mano: no se actualiza sola. Clic para volver a automática.' : 'Se actualiza sola. Clic para fijarla.') + '">' + (locked ? 'Manual' : 'Auto') + '</button>') +
@@ -1664,7 +1664,7 @@
       if (c) answers[q.id] = Number(c.value); else missing++;
     });
     if (missing) { toast('Responde las 5 preguntas (faltan ' + missing + ')'); return; }
-    var goal = parseFloat(f.savingsGoal.value);
+    var goal = num(f.savingsGoal.value);
     if (!(goal > 0 && goal < 100)) { toast('La meta de ahorro debe estar entre 1 y 99 %'); return; }
     var res = Advisor.scoreProfile(answers);
     state.profile = {
@@ -2256,7 +2256,7 @@
   function onDebtSubmit(e) {
     e.preventDefault();
     var f = e.target, kind = f.dataset.kind;
-    var amount = parseFloat(f.amount.value);
+    var amount = num(f.amount.value);
     if (!f.person.value.trim()) { toast('Indica el nombre de la persona'); f.person.focus(); return; }
     if (!(amount > 0)) { toast('Ingresa un monto mayor a 0'); f.amount.focus(); return; }
     if (!f.date.value) { toast('Elige la fecha'); return; }
@@ -2282,7 +2282,7 @@
     e.preventDefault();
     var f = e.target, d = byId(state.debts, $('#debt-form').editId.value);
     if (!d) return;
-    var amt = parseFloat(f.amount.value), bal = C.debtBalance(d);
+    var amt = num(f.amount.value), bal = C.debtBalance(d);
     if (!(amt > 0)) { toast('Ingresa un monto mayor a 0'); return; }
     if (amt > bal.pending + 0.001) { toast('El abono supera lo pendiente (' + fmtMoney(bal.pending, d.currency) + ')'); return; }
     if (!f.date.value) { toast('Elige la fecha'); return; }
@@ -2305,7 +2305,7 @@
   function rateInv() { return $('#fx-form').dataset.rateInv === '1'; }
   /** Tasa efectiva (1 recibes = ? entregas) a partir de lo escrito. */
   function effectiveRate() {
-    var v = parseFloat($('#fx-form').rate.value);
+    var v = num($('#fx-form').rate.value);
     if (!(v > 0)) return 0;
     return rateInv() ? 1 / v : v;
   }
@@ -2333,7 +2333,7 @@
     var div = document.createElement('div');
     div.className = 'cost-row';
     div.innerHTML = '<label>Concepto<input data-c="concept" maxlength="60" placeholder="Ej.: comisión de red" value="' + esc(cost.concept || '') + '"></label>' +
-      '<label>Monto<input data-c="amount" type="number" inputmode="decimal" step="any" min="0" value="' + (cost.amount != null ? cost.amount : '') + '"></label>' +
+      '<label>Monto<input data-c="amount" type="text" inputmode="decimal" autocomplete="off" value="' + (cost.amount != null ? cost.amount : '') + '"></label>' +
       '<label>Moneda<select data-c="currency"></select></label>' +
       '<label>Sale de<select data-c="accountId"></select></label>' +
       '<button type="button" class="mini c-del" data-action="del-cost" aria-label="Quitar costo">' + icon('i-x') + '</button>';
@@ -2344,15 +2344,15 @@
   function gatherCosts() {
     return $$('#fx-costs .cost-row').map(function (r) {
       var g = function (k) { return r.querySelector('[data-c="' + k + '"]').value; };
-      return { concept: g('concept').trim(), amount: C.round(parseFloat(g('amount')) || 0, 2), currency: g('currency'), accountId: g('accountId') || null };
+      return { concept: g('concept').trim(), amount: C.round(num(g('amount')) || 0, 2), currency: g('currency'), accountId: g('accountId') || null };
     }).filter(function (c) { return c.amount > 0; });
   }
 
   function fxDraft() {
     var f = $('#fx-form');
     return {
-      amount: parseFloat(f.amount.value) || 0, inCurrency: f.inCurrency.value, outCurrency: f.outCurrency.value, rate: effectiveRate(),
-      commission: { mode: f.comMode.value, value: parseFloat(f.comValue.value) || 0, currency: f.comCurrency.value, charge: f.comCharge.value }
+      amount: num(f.amount.value) || 0, inCurrency: f.inCurrency.value, outCurrency: f.outCurrency.value, rate: effectiveRate(),
+      commission: { mode: f.comMode.value, value: num(f.comValue.value) || 0, currency: f.comCurrency.value, charge: f.comCharge.value }
     };
   }
 
@@ -2409,7 +2409,7 @@
     if (!f.dataset.deliveredTouched) f.delivered.value = x.amount > 0 && x.rate > 0 ? q.delivered : '';
     $('#fx-deliver-hint').innerHTML = f.dataset.deliveredTouched
       ? '(ajustado a mano · <button type="button" class="link" data-action="fx-recalc">↺ recalcular</button>)' : '(se calcula solo)';
-    var delivered = parseFloat(f.delivered.value) || 0;
+    var delivered = num(f.delivered.value) || 0;
     if (!(x.amount > 0)) { $('#fx-quote').innerHTML = '<span class="muted">Escribe el monto para ver el cálculo.</span>'; $('#fx-profit-box').innerHTML = ''; return; }
     var comTxt = x.commission.mode === 'porcentaje'
       ? fmtNum(x.commission.value, 0, 4) + ' % × ' + fmtMoney(x.amount, inC) + ' = ' + fmtMoney(q.commission, inC)
@@ -2485,7 +2485,7 @@
     e.preventDefault();
     var f = e.target, x = fxDraft();
     var q = C.exchangeQuote(x, rates());
-    var delivered = parseFloat(f.delivered.value);
+    var delivered = num(f.delivered.value);
     if (!(x.amount > 0)) { toast('Ingresa el monto a cambiar'); f.amount.focus(); return; }
     if (!(x.rate > 0)) { toast('Ingresa la tasa de cambio'); f.rate.focus(); return; }
     if (!(q.commission >= 0) || q.commission >= x.amount) { toast('Revisa la comisión: debe ser menor al monto'); f.comValue.focus(); return; }
@@ -2968,6 +2968,8 @@
   }
   /** Interpreta el monto escrito: acepta coma o punto decimal y sumas («12,50+3»). */
   function parseAmount(txt) { return C.parseAmount(txt); }
+  /** Número escrito con coma o punto («1,5», «95,5», «1.234,56»); NaN si no es válido. */
+  function num(txt) { return C.parseNum(txt); }
 
   // ---- Registro por voz o frase: «gasté 25 dólares en comida con la tarjeta»
   var stopListening = null;
@@ -3216,7 +3218,7 @@
     $('#add-currency').addEventListener('submit', async function (e) {
       e.preventDefault();
       var f = e.target;
-      var code = f.code.value.trim().toUpperCase().split(/\s|·/)[0], r = parseFloat(f.rate.value);
+      var code = f.code.value.trim().toUpperCase().split(/\s|·/)[0], r = num(f.rate.value);
       if (!/^[A-Z0-9]{2,10}$/.test(code)) { toast('Código inválido'); return; }
       if (rates()[code]) { toast(code + ' ya existe'); return; }
       if (C.PEGGED[code]) {
@@ -3280,7 +3282,7 @@
       e.preventDefault();
       var dlg = $('#price-dialog'), f = e.target;
       if (!e.submitter || e.submitter.value !== 'ok') { dlg.close(); return; }
-      var p = parseFloat(f.price.value);
+      var p = num(f.price.value);
       if (!(p > 0)) { toast('Ingresa un precio mayor a 0'); f.price.focus(); return; }
       state.prices[f.dataset.key] = { price: C.round(p, 8), currency: f.dataset.cur, change24h: null, time: Date.now(), source: 'manual', error: null };
       dlg.close();
@@ -3291,7 +3293,7 @@
     document.addEventListener('change', function (e) {
       var el = e.target, d = el.dataset;
       if (d.rate) {
-        var r = parseFloat(el.value);
+        var r = num(el.value);
         if (!(r > 0)) { toast('Tasa inválida'); el.value = rates()[d.rate]; return; }
         rates()[d.rate] = r; state.settings.rateLocks[d.rate] = true;
         persist(); toast('Tasa de ' + d.rate + ' fijada a mano');
