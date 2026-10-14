@@ -1253,6 +1253,85 @@
     var fees = C.sum(inRangeOps.map(function (o) { return C.toBase(o.fee || 0, o.currency, rates()); }));
     $('#perf-ops').innerHTML = 'En el periodo: compras ' + fmtMoney(sumSide('compra'), b) + ' · ventas ' + fmtMoney(sumSide('venta'), b) +
       ' · comisiones ' + fmtMoney(fees, b) + ' · ganancia realizada total <span class="' + trend(pf.realized) + '">' + fmtSigned(pf.realized, b) + '</span>.';
+
+    renderProjection();
+    renderYearReport();
+  }
+
+  // ================================================================ proyección de patrimonio
+  var PROJ = [{ rate: 2, label: 'Conservador', color: 'var(--s3)' }, { rate: 5, label: 'Moderado', color: 'var(--s1)' }, { rate: 8, label: 'Optimista', color: 'var(--s4)' }];
+  function projDefaults() {
+    var avg = Advisor.monthlyAverages(state, S.today(), 6);
+    return { start: C.netWorth(state, S.today()).total, saving: avg ? C.round(avg.income - avg.expense, 2) : 0, avg: avg };
+  }
+  function renderProjection() {
+    var b = base(), d = projDefaults();
+    var si = $('#proj-start'), sv = $('#proj-saving');
+    si.placeholder = String(d.start); sv.placeholder = String(d.saving);
+    var start = si.value.trim() ? C.parseAmount(si.value.replace('-', '')) * (/^-/.test(si.value.trim()) ? -1 : 1) : d.start;
+    var saving = sv.value.trim() ? C.parseAmount(sv.value.replace('-', '')) * (/^-/.test(sv.value.trim()) ? -1 : 1) : d.saving;
+    if (!isFinite(start)) start = d.start;
+    if (!isFinite(saving)) saving = d.saving;
+    $('#proj-sub').innerHTML = 'A este ritmo: parte de tu patrimonio actual (' + fmtMoney(d.start, b) + ') y ahorra ' + fmtMoney(d.saving, b) + ' al mes' +
+      (d.avg ? ' (promedio de ' + d.avg.months.length + (d.avg.months.length === 1 ? ' mes' : ' meses') + ' con datos)' : '') + '. Puedes cambiar ambos valores.';
+    var sc = Insights.projection(start, saving, PROJ.map(function (p) { return p.rate; }), 10);
+    var today = S.today(), dates = [];
+    for (var y = 0; y <= 10; y++) dates.push((Number(today.slice(0, 4)) + y) + today.slice(4));
+    var series = sc.map(function (s, i) { return { label: PROJ[i].label + ' ' + PROJ[i].rate + ' %', color: PROJ[i].color, values: s.values, width: i === 1 ? 2.5 : 2 }; });
+    $('#proj-legend').innerHTML = legendHtml(series.map(function (s) { return { label: s.label, color: s.color, line: true, value: fmtMoney(s.values[10], b) }; }));
+    Charts.lines($('#proj-chart'), {
+      x: dates, series: series, yFormat: fmtCompact, ariaLabel: 'Proyección de patrimonio a 10 años',
+      xFormat: function (dd) { return 'Año ' + (Number(dd.slice(0, 4)) - Number(today.slice(0, 4))); },
+      tooltip: function (i) { return tipHtml(i === 0 ? 'Hoy' : 'En ' + i + (i === 1 ? ' año' : ' años'), series.map(function (s) { return [s.color, s.label, fmtMoney(s.values[i], b)]; })); }
+    });
+    var put = function (yrs) { return C.round(start + saving * 12 * yrs, 2); };
+    $('#proj-table').innerHTML = table(['En', 'Aportas', 'Conservador', 'Moderado', 'Optimista'], [1, 5, 10].map(function (yrs) {
+      return [yrs + (yrs === 1 ? ' año' : ' años'), fmtMoney(put(yrs), b)].concat(sc.map(function (s) { return '<b>' + fmtMoney(s.values[yrs], b) + '</b>'; }));
+    }));
+  }
+
+  // ================================================================ resumen anual (impuestos)
+  var ASSET_TYPE_NAMES = { accion: 'Acción', etf: 'ETF', cripto: 'Cripto', divisa: 'Divisa', otro: 'Otro' };
+  function renderYearReport() {
+    var b = base(), sel = $('#year-sel');
+    var years = Insights.annualReport(state, S.today().slice(0, 4)).years;
+    if (years.indexOf(S.today().slice(0, 4)) === -1) years.unshift(S.today().slice(0, 4));
+    fillSelect(sel, years.map(function (y) { return { value: y, label: y }; }), sel.value || S.today().slice(0, 4));
+    var r = Insights.annualReport(state, sel.value);
+    var tile = function (k, v, dd) { return '<div class="stat-tile"><div class="k">' + k + '</div><div class="v">' + v + '</div><div class="d">' + dd + '</div></div>'; };
+    $('#year-kpis').innerHTML =
+      tile('Ingresos', fmtMoney(r.income, b), 'incluye ganancia de cambios') +
+      tile('Gastos', fmtMoney(r.expense, b), 'neto ' + fmtSigned(r.net, b)) +
+      tile('Ganancia en cambios', '<span class="' + trend(r.fx.profit) + '">' + fmtSigned(r.fx.profit, b) + '</span>', r.fx.count + ' cambio(s)') +
+      tile('Ventas de inversiones', '<span class="' + trend(r.salesNet) + '">' + fmtSigned(r.salesNet, b) + '</span>', r.sales.length + ' venta(s)');
+    var catRows = function (list, total) {
+      return list.length ? table(['Categoría', 'Total', '%'], list.map(function (x) {
+        return [esc(catName(x.categoryId)), fmtMoney(x.total, b), fmtNum(total > 0 ? C.round(x.total / total * 100, 1) : 0, 0, 1) + ' %'];
+      }), ['Total', fmtMoney(total, b), '100 %']) : '<p class="muted small">Sin registros en ' + r.year + '.</p>';
+    };
+    $('#year-inc').innerHTML = catRows(r.incomeByCat, r.income);
+    $('#year-exp').innerHTML = catRows(r.expenseByCat, r.expense);
+    $('#year-fx').innerHTML = r.fx.count
+      ? r.fx.count + ' cambio(s) completado(s): recibiste ' + fmtMoney(r.fx.received, b) + ', comisiones cobradas ' + fmtMoney(r.fx.commission, b) +
+        ', costos pagados ' + fmtMoney(r.fx.costs, b) + ' → ganancia <b class="' + trend(r.fx.profit) + '">' + fmtSigned(r.fx.profit, b) + '</b> (ya incluida en ingresos).'
+      : 'Sin cambios completados en ' + r.year + '.';
+    $('#year-sales').innerHTML = r.sales.length ? table(['Fecha', 'Activo', 'Cantidad', 'Venta', 'Costo', 'Comisión', 'Resultado'], r.sales.map(function (x) {
+      return [fmtDate(x.date), esc(x.ticker) + ' <span class="tag">' + ASSET_TYPE_NAMES[x.assetType] + '</span>', fmtNum(x.quantity, 0, 8),
+        fmtMoney(x.proceeds, x.currency), fmtMoney(x.cost, x.currency), fmtMoney(x.fee, x.currency), '<span class="' + trend(x.gain) + '">' + fmtSigned(x.gain, x.currency) + '</span>'];
+    }), ['Total', '', '', '', '', '', '<span class="' + trend(r.salesNet) + '">' + fmtSigned(r.salesNet, b) + '</span>']) : '<p class="muted small">Sin ventas en ' + r.year + '.</p>';
+    $('#year-note').innerHTML = 'Ganancias ' + fmtMoney(r.salesGains, b) + ' · pérdidas ' + fmtMoney(r.salesLosses, b) + ' · comisiones de inversión pagadas ' + fmtMoney(r.invFees, b) +
+      '. Costo de lo vendido = costo promedio ponderado de tus compras (si tu país exige FIFO, avísame y lo añado). Montos en ' + b + ' con las tasas actuales.';
+  }
+  function exportYearCSV() {
+    var r = Insights.annualReport(state, $('#year-sel').value), b = base(), rows = [];
+    rows.push(['resumen', 'ingresos', '', r.income, b]); rows.push(['resumen', 'gastos', '', r.expense, b]); rows.push(['resumen', 'neto', '', r.net, b]);
+    r.incomeByCat.forEach(function (x) { rows.push(['ingreso', catName(x.categoryId), '', x.total, b]); });
+    r.expenseByCat.forEach(function (x) { rows.push(['gasto', catName(x.categoryId), '', x.total, b]); });
+    rows.push(['cambios', 'ganancia (' + r.fx.count + ' cambios)', '', r.fx.profit, b]);
+    rows.push(['cambios', 'comisiones cobradas', '', r.fx.commission, b]);
+    r.sales.forEach(function (x) { rows.push(['venta', x.ticker + ' ' + x.quantity + ' (venta ' + x.proceeds + ', costo ' + x.cost + ', comisión ' + x.fee + ')', x.date, x.gain, x.currency]); });
+    rows.push(['inversiones', 'comisiones pagadas', '', r.invFees, b]);
+    S.download('resumen_' + r.year + '.csv', S.toCSV(['seccion', 'concepto', 'fecha', 'monto', 'moneda'], rows), 'text/csv');
   }
 
   /** Foto diaria del patrimonio (valor de mercado) para la serie histórica. */
@@ -3107,6 +3186,7 @@
       else if (d.action === 'quick-open') openQuick();
       else if (d.action === 'quick-close') closeQuick();
       else if (d.action === 'quick-voice') quickVoice();
+      else if (d.action === 'year-csv') exportYearCSV();
       else if (d.action === 'summary-dismiss') { state.settings.summarySeen = d.month; persist(); }
       else if (d.action === 'review-profile') { editingProfile = true; showView('consejos'); renderAdvice(); window.scrollTo(0, 0); }
       else if (d.qAcc) { quick.accountId = d.qAcc; renderQuick(); }
@@ -3224,6 +3304,9 @@
     });
     var rz;
     window.addEventListener('resize', function () { clearTimeout(rz); rz = setTimeout(renderAnalysis, 150); });
+    $('#year-sel').addEventListener('change', renderYearReport);
+    var pz;
+    ['#proj-start', '#proj-saving'].forEach(function (sel) { $(sel).addEventListener('input', function () { clearTimeout(pz); pz = setTimeout(renderProjection, 250); }); });
 
     // Actualización periódica de precios mientras la app está visible
     setInterval(function () {

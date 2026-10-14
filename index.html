@@ -538,6 +538,36 @@
         <div class="table-wrap" id="perf-table"></div>
         <p class="hint" id="perf-ops"></p>
       </div>
+
+      <div class="card" id="proj-card">
+        <div class="card-head"><h2>Proyección de patrimonio</h2></div>
+        <p class="hint" id="proj-sub"></p>
+        <div class="grid">
+          <label>Patrimonio de partida<input id="proj-start" type="text" inputmode="decimal" autocomplete="off"></label>
+          <label>Ahorro mensual<input id="proj-saving" type="text" inputmode="decimal" autocomplete="off"></label>
+        </div>
+        <div class="legend" id="proj-legend"></div>
+        <div class="chart" id="proj-chart"></div>
+        <div class="table-wrap" id="proj-table"></div>
+        <p class="hint">Interés compuesto mensual. Rentabilidad anual supuesta: conservador 2 %, moderado 5 %, optimista 8 % (antes de inflación e impuestos). Es una estimación, no una promesa: los mercados no suben en línea recta.</p>
+      </div>
+
+      <div class="card" id="year-card">
+        <div class="card-head wrap"><h2>Resumen anual para impuestos</h2>
+          <select id="year-sel" aria-label="Año"></select></div>
+        <div class="stat-tiles" id="year-kpis"></div>
+        <h3>Ingresos por categoría</h3>
+        <div class="table-wrap" id="year-inc"></div>
+        <h3>Gastos por categoría</h3>
+        <div class="table-wrap" id="year-exp"></div>
+        <h3>Negocio de cambios</h3>
+        <p class="hint" id="year-fx" style="margin-top:0"></p>
+        <h3>Ventas de inversiones (ganancias y pérdidas realizadas)</h3>
+        <div class="table-wrap" id="year-sales"></div>
+        <p class="hint" id="year-note"></p>
+        <div class="actions" style="justify-content:flex-start"><button type="button" data-action="year-csv">Descargar CSV del año</button></div>
+        <p class="disclaimer" style="margin:12px 0 0">Resumen informativo para preparar tu declaración. No es asesoría fiscal: las reglas cambian según tu país; confírmalo con un contador.</p>
+      </div>
     </section>
 
     <!-- ================= CONSEJOS ================= -->
