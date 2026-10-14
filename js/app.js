@@ -325,6 +325,31 @@
       : '<li class="empty">Aún no hay movimientos. Registra el primero o carga datos de ejemplo en Ajustes.</li>';
 
     renderWarnings(pf);
+    renderMonthSummary();
+  }
+
+  // ================================================================ resumen mensual
+  function monthNameOf(ym) { return new Date(ym + '-15T12:00').toLocaleDateString(LOCALE, { month: 'long' }); }
+  function summaryHelpers() {
+    return { money: function (v) { return fmtMoney(v, base()); }, pct: function (v) { return fmtNum(C.round(v, 1), 0, 1) + ' %'; },
+      monthName: monthNameOf, cat: catName };
+  }
+  function summaryHtml(ym, opts) {
+    opts = opts || {};
+    var s = Insights.monthlySummary(state, ym, S.today());
+    if (!s.hasData) return '';
+    var lines = Insights.summarySentences(s, summaryHelpers());
+    var name = monthNameOf(ym);
+    return '<div class="card summary-card"><div class="card-head"><h2>' + esc(opts.title || ('Resumen de ' + name)) + '</h2>' +
+      (opts.dismiss ? '<button type="button" class="link small" data-action="summary-dismiss" data-month="' + ym + '">Ocultar</button>' : '') + '</div>' +
+      '<ul class="summary-lines">' + lines.map(function (l) { return '<li>' + esc(l) + '</li>'; }).join('') + '</ul></div>';
+  }
+  /** En Inicio: los primeros 7 días de cada mes, el resumen del mes anterior (hasta que lo ocultes). */
+  function renderMonthSummary() {
+    var box = $('#month-summary'), today = S.today();
+    var prev = Insights.prevMonth(today.slice(0, 7));
+    var show = Number(today.slice(8)) <= 7 && state.settings.summarySeen !== prev;
+    box.innerHTML = show ? summaryHtml(prev, { dismiss: true }) : '';
   }
 
   function kv(k, v) { return '<div class="kv"><span>' + k + '</span><span>' + v + '</span></div>'; }
@@ -1264,6 +1289,8 @@
         '<button type="button" class="primary" data-action="start-profile">Hacer el test (1 min)</button>';
     } else {
       var top = recs.filter(function (r) { return r.severity !== 'ok'; }).slice(0, 3);
+      var rev = Insights.profileReview(state, state.profile, S.today());
+      if (rev.length) top = [{ severity: 'media', title: 'Revisa tu perfil de inversor', why: rev[0].text }].concat(top.slice(0, 2));
       home.innerHTML = top.length ? top.map(function (r) {
         return '<div class="home-rec" data-sev="' + r.severity + '">' + '<span class="sev"><i aria-hidden="true">' + SEV[r.severity][0] + '</i></span>' +
           '<div><div class="t">' + esc(r.title) + '</div><div class="w">' + esc(r.why) + '</div></div></div>';
@@ -1279,6 +1306,12 @@
     if (showForm && !form.dataset.filled) { fillProfileForm(); form.dataset.filled = '1'; }
     if (!showForm) delete form.dataset.filled;
 
+    var cur = S.today().slice(0, 7);
+    $('#advice-summary').innerHTML = '';
+    var sumPrev = summaryHtml(Insights.prevMonth(cur)), sumCur = summaryHtml(cur, { title: monthNameOf(cur).replace(/^./, function (c) { return c.toUpperCase(); }) + ' hasta hoy' });
+    $('#advice-summary').classList.toggle('hidden', !sumPrev && !sumCur);
+    $('#advice-summary').innerHTML = (sumCur ? sumCur.replace('<div class="card summary-card">', '<div class="summary-card">') : '') +
+      (sumPrev ? sumPrev.replace('<div class="card summary-card">', '<div class="summary-card" style="margin-top:14px">') : '');
     if (!recs) {
       $('#recs-headline').textContent = 'Empieza por tu perfil';
       $('#recs-summary').textContent = 'Con tus respuestas ajusto los límites de riesgo, el fondo de emergencia y la meta de ahorro.';
@@ -1309,6 +1342,12 @@
       '<div><span>Fondo de emergencia</span><b>' + (Number(pr.emergencyMonths) || P.emergency) + ' meses</b></div>' +
       '<div><span>Meta de ahorro</span><b>' + (Number(pr.savingsGoal) || 20) + ' %</b></div></div>';
 
+    var review = Insights.profileReview(state, state.profile, S.today());
+    if (review.length) {
+      $('#profile-card').insertAdjacentHTML('beforeend', '<div class="review-box"><b>Conviene repetir el test</b><ul>' +
+        review.map(function (x) { return '<li>' + esc(x.text) + '</li>'; }).join('') + '</ul>' +
+        '<button type="button" class="primary" data-action="review-profile">Repetir el test (1 min)</button></div>');
+    }
     $('#recs-list').innerHTML = recs.map(function (r) {
       return '<article class="rec" data-sev="' + r.severity + '">' +
         '<div class="rec-top">' + sevBadge(r.severity) + '<span class="tag">' + esc(r.area) + '</span></div>' +
@@ -1350,7 +1389,8 @@
       answers: answers, score: res.score, type: res.type, cappedFrom: res.cappedFrom,
       goals: $$('input[name="goal"]:checked', f).map(function (x) { return x.value; }),
       emergencyMonths: f.emergencyMonths.value ? Number(f.emergencyMonths.value) : null,
-      savingsGoal: goal, updatedAt: Date.now()
+      savingsGoal: goal, updatedAt: Date.now(),
+      context: Insights.profileContext(state, S.today())   // para proponer repetir el test si tu situación cambia
     };
     editingProfile = false;
     persist();
@@ -2626,6 +2666,8 @@
   function openQuick() {
     var f = $('#quick-sheet');
     f.reset();
+    $('#q-heard').classList.add('hidden');
+    $('#q-mic').classList.toggle('hidden', !Voice.supported());
     quick.type = 'egreso'; quick.accountId = null; quick.categoryId = null;
     f.date.value = S.today();
     $('#quick-sheet').classList.remove('hidden');
@@ -2635,6 +2677,7 @@
     f.amount.focus();
   }
   function closeQuick() {
+    if (stopListening) stopListening();
     $('#quick-sheet').classList.add('hidden');
     $('#quick-backdrop').classList.add('hidden');
     document.body.classList.remove('sheet-open');
@@ -2642,6 +2685,66 @@
   }
   /** Interpreta el monto escrito: acepta coma o punto decimal y sumas («12,50+3»). */
   function parseAmount(txt) { return C.parseAmount(txt); }
+
+  // ---- Registro por voz o frase: «gasté 25 dólares en comida con la tarjeta»
+  var stopListening = null;
+  function voiceContext() {
+    var methodIds = C.rankByUse(state.methods.map(function (m) { return m.id; }), state.transactions, 'methodId', S.today());
+    return {
+      today: S.today(), currencies: currencies(),
+      defaultAccountId: (account(state.settings.last.accountId) || quickAccounts()[0] || {}).id || null,
+      accounts: quickAccounts(), categories: state.categories,
+      methods: methodIds.map(function (id) { return byId(state.methods, id); })
+    };
+  }
+  /** Rellena la hoja con lo que se entendió; el usuario revisa y pulsa Guardar. */
+  function applySay(text) {
+    text = String(text || '').trim();
+    if (!text) return;
+    var f = $('#quick-sheet'), r = Voice.parse(text, voiceContext());
+    quick.type = r.type;
+    f.querySelector('input[name="qtype"][value="' + r.type + '"]').checked = true;
+    if (r.accountId) quick.accountId = r.accountId;
+    if (r.categoryId) quick.categoryId = r.categoryId; else quick.categoryId = null;
+    if (r.amount != null) f.amount.value = String(r.amount).replace('.', ',');
+    if (r.methodId) f.methodId.value = r.methodId;
+    f.date.value = r.date;
+    if (r.note) f.note.value = r.note;
+    renderQuick();
+    if (r.methodId) f.methodId.value = r.methodId;
+    if (r.date !== S.today() || r.note) f.querySelector('.q-more').open = true;
+    var acc = account(quick.accountId), parts = [r.type === 'ingreso' ? 'Ingreso' : 'Gasto'];
+    if (r.amount != null && acc) parts.push(fmtMoney(r.amount, acc.currency));
+    if (r.categoryId) parts.push(catName(r.categoryId));
+    if (r.methodId) parts.push(methodName(r.methodId));
+    if (acc) parts.push('cuenta ' + acc.name);
+    if (r.date !== S.today()) parts.push(fmtDate(r.date));
+    var miss = r.missing.filter(function (m) { return m.indexOf('cuenta en') !== 0; });
+    var noAcc = r.missing.filter(function (m) { return m.indexOf('cuenta en') === 0; })[0];
+    $('#q-heard').innerHTML = 'Entendí: <b>' + esc(parts.join(' · ')) + '</b>' +
+      (miss.length ? '<br><span class="miss">Falta: ' + esc(miss.join(' y ')) + ' — elígelo abajo.</span>' : '<br>Revisa y pulsa Guardar.') +
+      (noAcc ? '<br><span class="miss">No tienes una ' + esc(noAcc) + ': se usará ' + esc(acc ? acc.name : '') + '.</span>' : '');
+    $('#q-heard').classList.remove('hidden');
+    if (r.amount == null) f.amount.focus();
+  }
+  function quickVoice() {
+    var btn = $('#q-mic'), f = $('#quick-sheet');
+    if (stopListening) { stopListening(); return; }
+    if (!Voice.supported()) { toast('Este navegador no permite dictar: escribe la frase y pulsa Enter'); f.say.focus(); return; }
+    btn.classList.add('listening');
+    $('#q-heard').innerHTML = 'Escuchando… di por ejemplo «gasté 25 dólares en comida con la tarjeta»';
+    $('#q-heard').classList.remove('hidden');
+    var last = '';
+    stopListening = Voice.listen(function (txt, fin) {
+      last = txt; f.say.value = txt;
+      if (fin) applySay(txt);
+    }, function (err) {
+      stopListening = null; btn.classList.remove('listening');
+      if (err === 'not-allowed' || err === 'service-not-allowed') toast('Permite el micrófono para dictar (icono del candado en la barra de direcciones)');
+      else if (err && err !== 'aborted' && err !== 'no-speech') toast('No se pudo usar el micrófono (' + err + ')');
+      else if (!last) { $('#q-heard').innerHTML = 'No te escuché. Vuelve a tocar el micrófono o escribe la frase.'; }
+    });
+  }
   function onQuickSubmit(e) {
     e.preventDefault();
     var f = e.target;
@@ -2797,6 +2900,10 @@
     $('#quick-backdrop').addEventListener('click', closeQuick);   // tocar fuera de la hoja la cierra
     $$('input[name="qtype"]', qs).forEach(function (r) { r.addEventListener('change', function () { quick.type = r.value; quick.categoryId = null; renderQuick(); }); });
     document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && document.body.classList.contains('sheet-open')) closeQuick(); });
+    // Frase escrita en el «+»: Enter la interpreta (no guarda todavía)
+    $('#quick-sheet').say.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); applySay(e.target.value); }
+    });
     $('#privacy-on-open').checked = !!uiPrefs().privacyOnOpen;
     $('#privacy-on-open').addEventListener('change', function (e) { setUiPref('privacyOnOpen', e.target.checked); });
     bindGestures();
@@ -2999,6 +3106,9 @@
       else if (d.action === 'sync-now') Sync.syncNow();
       else if (d.action === 'quick-open') openQuick();
       else if (d.action === 'quick-close') closeQuick();
+      else if (d.action === 'quick-voice') quickVoice();
+      else if (d.action === 'summary-dismiss') { state.settings.summarySeen = d.month; persist(); }
+      else if (d.action === 'review-profile') { editingProfile = true; showView('consejos'); renderAdvice(); window.scrollTo(0, 0); }
       else if (d.qAcc) { quick.accountId = d.qAcc; renderQuick(); }
       else if (d.qCat) { quick.categoryId = d.qCat; renderQuick(); }
       else if (d.action === 'quick-transfer') {

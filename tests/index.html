@@ -21,6 +21,8 @@
   <script src="../js/advisor.js"></script>
   <script src="../js/backups.js"></script>
   <script src="../js/sync.js"></script>
+  <script src="../js/voice.js"></script>
+  <script src="../js/insights.js"></script>
   <script>
   (function () {
     var out = document.getElementById('out'), pass = 0, fail = 0, ol;
@@ -415,6 +417,103 @@
     var trFlows = C.flowTransactions(trs).filter(function (t) { return t.categoryId === '__comisiones'; });
     eq('La comisión aparece como gasto de 5 USD en «Comisiones de transferencia»', trFlows.map(function (t) { return [t.type, t.amount, t.currency]; }), [['egreso', 5, 'USD']]);
     eq('Gastos del periodo = 5 (la transferencia en sí no es gasto)', C.summarizeTransactions(C.flowTransactions(trs), trs.settings.rates).expense, 5);
+
+    section('Registro por voz o texto');
+    var vctx = { today: '2026-10-14', defaultAccountId: 'efe', currencies: ['USD', 'USDT', 'EUR'],
+      accounts: [{ id: 'efe', name: 'Efectivo', currency: 'USD' }, { id: 'bin', name: 'Binance', currency: 'USDT' }, { id: 'eur', name: 'Cuenta en euros', currency: 'EUR' }],
+      categories: [{ id: 'c1', name: 'Comida', type: 'egreso' }, { id: 'c2', name: 'Transporte', type: 'egreso' }, { id: 'c3', name: 'Salud', type: 'egreso' },
+        { id: 'c4', name: 'Comisiones', type: 'egreso' }, { id: 'i1', name: 'Salario', type: 'ingreso' }, { id: 'i2', name: 'Freelance', type: 'ingreso' }],
+      methods: [{ id: 'm1', name: 'Efectivo' }, { id: 'm2', name: 'Débito' }, { id: 'm3', name: 'Crédito' }, { id: 'm4', name: 'Transferencia' }] };
+    var vp = function (txt) { var r = Voice.parse(txt, vctx); return [r.type, r.amount, r.currency, r.accountId, r.categoryId, r.methodId, r.date]; };
+    eq('«Gasté 25 dólares en comida con la tarjeta» → gasto 25 USD, Efectivo, Comida, tarjeta = Débito, hoy',
+      vp('Gasté 25 dólares en comida con la tarjeta'), ['egreso', 25, 'USD', 'efe', 'c1', 'm2', '2026-10-14']);
+    eq('«Ayer pagué 12,50 de taxi en efectivo» → 12.5, taxi = Transporte, método Efectivo, ayer',
+      vp('Ayer pagué 12,50 de taxi en efectivo'), ['egreso', 12.5, 'USD', 'efe', 'c2', 'm1', '2026-10-13']);
+    eq('«Me pagaron 1.200 euros de salario» → ingreso 1200 EUR en la cuenta en euros («pagaron» no es «pago»)',
+      vp('Me pagaron 1.200 euros de salario'), ['ingreso', 1200, 'EUR', 'eur', 'i1', null, '2026-10-14']);
+    eq('«Recibí 300 USDT en Binance por un proyecto freelance» → ingreso 300 USDT, Binance, Freelance',
+      vp('Recibí 300 USDT en Binance por un proyecto freelance'), ['ingreso', 300, 'USDT', 'bin', 'i2', null, '2026-10-14']);
+    eq('«compré medicinas por 2 mil con crédito» → 2000, medicinas = Salud, Crédito',
+      vp('compré medicinas por 2 mil con crédito'), ['egreso', 2000, 'USD', 'efe', 'c3', 'm3', '2026-10-14']);
+    eq('«anteayer gasté 5 en transporte» → hace 2 días', vp('anteayer gasté 5 en transporte')[6], '2026-10-12');
+    var vcine = Voice.parse('gasté 7 con 50 en cine', vctx);
+    eq('«7 con 50» = 7.5; «cine» sin categoría parecida → la pide y guarda la frase como nota',
+      [vcine.amount, vcine.categoryId, vcine.missing.indexOf('categoría') !== -1, vcine.note], [7.5, null, true, 'gasté 7 con 50 en cine']);
+    eq('Números: «1,234.56» · «$40» · «25» · sin número', [Voice.parseNumber('1,234.56'), Voice.parseNumber('$40'), Voice.parseNumber('25'), Voice.parseNumber('nada')], [1234.56, 40, 25, null]);
+
+    section('Resumen mensual, resumen anual, proyección y perfil');
+    var ins = {
+      settings: { baseCurrency: 'USD', rates: { USD: 1, USDT: 1, EUR: 1.1 } },
+      accounts: [{ id: 'A', currency: 'USD', initialBalance: 1000 }, { id: 'E', currency: 'EUR', initialBalance: 0 }],
+      categories: [], snapshots: {}, prices: {}, debts: [],
+      transactions: [
+        { id: 's1', type: 'ingreso', date: '2026-09-05', amount: 2000, currency: 'USD', accountId: 'A', categoryId: 'sal' },
+        { id: 's2', type: 'egreso', date: '2026-09-06', amount: 300, currency: 'USD', accountId: 'A', categoryId: 'com' },
+        { id: 's3', type: 'egreso', date: '2026-09-07', amount: 700, currency: 'USD', accountId: 'A', categoryId: 'viv' },
+        { id: 'o1', type: 'ingreso', date: '2026-10-01', amount: 2000, currency: 'USD', accountId: 'A', categoryId: 'sal' },
+        { id: 'o2', type: 'egreso', date: '2026-10-03', amount: 450, currency: 'USD', accountId: 'A', categoryId: 'com' },
+        { id: 'o3', type: 'egreso', date: '2026-10-05', amount: 700, currency: 'USD', accountId: 'A', categoryId: 'viv' },
+        { id: 'o4', type: 'egreso', date: '2026-10-10', amount: 30, currency: 'USD', accountId: 'A', categoryId: 'oci' }
+      ],
+      exchanges: [{ id: 'x1', date: '2026-10-12', status: 'completada', received: 100, inCurrency: 'EUR', delivered: 110, outCurrency: 'USD',
+        commissionAmount: 0, inAccountId: 'E', outAccountId: 'A', costs: [], snapshot: { base: 'USD', rates: { USD: 1, EUR: 1.2 } } }],
+      investments: [
+        { id: 'i1', side: 'compra', assetType: 'accion', ticker: 'X', quantity: 10, price: 100, fee: 1, currency: 'USD', date: '2026-03-01' },
+        { id: 'i2', side: 'venta', assetType: 'accion', ticker: 'X', quantity: 4, price: 120, fee: 2, currency: 'USD', date: '2026-06-01' },
+        { id: 'i3', side: 'venta', assetType: 'accion', ticker: 'X', quantity: 2, price: 80, fee: 0, currency: 'USD', date: '2026-10-08' }
+      ]
+    };
+    var ms = Insights.monthlySummary(ins, '2026-10', '2026-10-20');
+    eq('Octubre: ingresos 2000 + ganancia de cambio (100 EUR × 1.2 − 110) 10 = 2010; gastos 450+700+30 = 1180; ahorro 830 ÷ 2010 = 41.29 %',
+      [ms.income, ms.expense, ms.savingsRate], [2010, 1180, 41.29]);
+    eq('Septiembre: (2000 − 1000) ÷ 2000 = 50 % → 41.29 − 50 = −8.7 puntos', [ms.prevSavingsRate, ms.deltaPts], [50, -8.7]);
+    eq('Mayor gasto: vivienda 700 = 700 ÷ 1180 = 59.3 % · subió comida 300 → 450 (+50 %); ocio nuevo no cuenta',
+      [ms.top.categoryId, ms.top.share, ms.rising.categoryId, ms.rising.change], ['viv', 59.3, 'com', 50]);
+    eq('Patrimonio: fin de sept 2000 + acciones a costo 600.6 = 2600.6 → hoy 2710 + 100 EUR×1.1 + 400.4 = 3220.4 (+619.8, +23.8 %)',
+      [ms.netWorth.start, ms.netWorth.end, ms.netWorth.change, ms.netWorth.pct], [2600.6, 3220.4, 619.8, 23.8]);
+    var hTxt = { money: function (v) { return 'USD ' + v.toFixed(2); }, pct: function (v) { return (Math.round(v * 10) / 10) + ' %'; },
+      monthName: function (ym) { return { '2026-10': 'octubre', '2026-09': 'septiembre' }[ym]; }, cat: function (id) { return { viv: 'Vivienda', com: 'Comida' }[id]; } };
+    var sent = Insights.summarySentences(ms, hTxt);
+    eq('Frase: «En octubre (hasta hoy) ahorraste el 41.3 % de tus ingresos, 8.7 puntos menos que en septiembre.»',
+      sent[0], 'En octubre (hasta hoy) ahorraste el 41.3 % de tus ingresos, 8.7 puntos menos que en septiembre.');
+    eq('Frases de mayor gasto, subida, cambios y patrimonio', sent.slice(1), ['Tu mayor gasto fue Vivienda: USD 700.00 (59.3 % del total).',
+      'Comida subió 50 % frente a septiembre (de USD 300.00 a USD 450.00).', 'Hiciste 1 cambio de divisas con una ganancia de USD 10.00.',
+      'Tu patrimonio creció USD 619.80 (+23.8 %).']);
+    var ar = Insights.annualReport(ins, 2026);
+    eq('Año 2026: ingresos 2000+2000+10 = 4010 · gastos 1000+1180 = 2180 · neto 1830', [ar.income, ar.expense, ar.net], [4010, 2180, 1830]);
+    eq('Ventas: 4×120 − 2 − costo 1001×4/10 (400.4) = +77.6 ; 2×80 − costo 600.6×2/6 (200.2) = −40.2 → neto 37.4',
+      [ar.sales.map(function (s) { return s.gain; }), ar.salesGains, ar.salesLosses, ar.salesNet], [[77.6, -40.2], 77.6, 40.2, 37.4]);
+    eq('Comisiones de inversión 1 + 2 + 0 = 3 · 1 compra · cambios: 1, ganancia 10 · años con datos', [ar.invFees, ar.buys, ar.fx.count, ar.fx.profit, ar.years], [3, 1, 1, 10, ['2026']]);
+    eq('Proyección: 1000 + 100/mes al 0 % por 1 año = 2200 ; 1000 al 12 % anual = 1120 ; 100/mes al 12 % = 1264.65',
+      [Insights.futureValue(1000, 100, 0, 12), Insights.futureValue(1000, 0, 12, 12), Insights.futureValue(0, 100, 12, 12)], [2200, 1120, 1264.65]);
+    eq('5 años: 5000 + 200/mes al 5 % = 19 944.16 ; escenarios 2/5/8 % con 11 puntos (año 0 a 10)',
+      [Insights.futureValue(5000, 200, 5, 60), Insights.projection(1000, 0).map(function (s) { return [s.rate, s.values.length]; })], [19944.16, [[2, 11], [5, 11], [8, 11]]]);
+    var upd = new Date('2026-01-10T12:00:00').getTime();
+    var rv = Insights.profileReview(ins, { type: 'moderado', answers: { drop: 3 }, updatedAt: upd, context: { income: 1000, netWorth: 2000 } }, '2026-10-14');
+    eq('Revisar perfil: 277 días (9 meses) · ingresos 1000 → 2000 (+100 %) · patrimonio 2000 → 3220.4 (+61 %) · vendió X con −20.1 % diciendo «mantendría»',
+      rv.map(function (r) { return r.id + (r.change != null ? ':' + r.change : ''); }), ['tiempo', 'ingresos:100', 'patrimonio:61', 'caidas']);
+    eq('Perfil reciente y sin cambios → nada que revisar', Insights.profileReview(ins, { type: 'moderado', answers: { drop: 1 }, updatedAt: new Date('2026-10-10T12:00:00').getTime(),
+      context: { income: 2000, netWorth: 3220 } }, '2026-10-14'), []);
+
+    section('Riesgo de un activo e ideas para explorar');
+    eq('Niveles por volatilidad anual: 5 % muy bajo · 10 % bajo · 18 % medio · 30 % alto · 50 % muy alto',
+      [Insights.riskLevel(5, 0), Insights.riskLevel(10, 0), Insights.riskLevel(18, -20), Insights.riskLevel(30, 0), Insights.riskLevel(50, 0)], [1, 2, 3, 4, 5]);
+    eq('Caída máxima −55 % sube a alto; −80 % a muy alto', [Insights.riskLevel(15, -55), Insights.riskLevel(15, -80)], [4, 5]);
+    var steady = []; for (var si = 0; si < 10; si++) steady.push(100 * Math.pow(1.01, si));
+    var rs1 = Insights.riskStats(steady, 365);
+    eq('Subida constante del 1 % diario: volatilidad 0, caída 0, rendimiento 1.01⁹ − 1 = 9.4 %, riesgo muy bajo', [rs1.volatility, rs1.maxDrawdown, rs1.return, rs1.level], [0, 0, 9.4, 1]);
+    var zig = [100]; for (var zi = 0; zi < 9; zi++) zig.push(zig[zig.length - 1] * (zi % 2 ? 0.9 : 1.1));
+    var rs2 = Insights.riskStats(zig, 365);
+    eq('Sube y baja 10 %: volatilidad 201.4 % anual, caída máx. 110 → 96.06 = −12.7 %, rendimiento +5.7 %, muy alto',
+      [rs2.volatility, rs2.maxDrawdown, rs2.return, rs2.level, rs2.label], [201.4, -12.7, 5.7, 5, 'Muy alto']);
+    eq('Encaja con el perfil: nivel 2 conservador sí, 3 conservador no, 5 agresivo sí',
+      [Insights.fitsProfile(2, 'conservador'), Insights.fitsProfile(3, 'conservador'), Insights.fitsProfile(5, 'agresivo')], [true, false, true]);
+    eq('Criptos para explorar: sin estables (USDT) ni envueltas (WBTC) y solo si Binance las tiene',
+      Insights.pickCryptos([{ symbol: 'btc' }, { symbol: 'usdt' }, { symbol: 'eth' }, { symbol: 'wbtc' }, { symbol: 'xyz' }], ['BTC', 'ETH', 'WBTC']).map(function (x) { return x.ticker; }), ['BTC', 'ETH']);
+    eq('Ideas: portafolio 100 % cripto (moderado) → diversificar, bonos, índices',
+      Insights.ideas({ rows: [{ position: { ticker: 'BTC' } }], byType: [{ assetType: 'cripto', weight: 100 }] }, 'moderado').map(function (i) { return i.id; }), ['cripto', 'bonos', 'indices']);
+    eq('Sin inversiones y conservador → empezar con BND, SHY, VT',
+      Insights.ideas({ rows: [], byType: [] }, 'conservador')[0].items.map(function (i) { return i.ticker; }), ['BND', 'SHY', 'VT']);
 
     section('Migración de datos v1 → v2');
     var v1 = { version: 1, settings: { baseCurrency: 'USD', rates: { USD: 1, EUR: 1.1 } }, categories: [], methods: [],

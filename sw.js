@@ -7,10 +7,10 @@
  * archivos de versiones distintas y la app quedaba en blanco.
  * Precios, tasas y la nube van siempre a la red: nunca se guardan aquí.
  * ========================================================================= */
-var CACHE = 'mis-finanzas-v9';
+var CACHE = 'mis-finanzas-v10';
 var SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/styles.css',
-  'js/config.js', 'js/calc.js', 'js/store.js', 'js/prices.js', 'js/charts.js', 'js/advisor.js', 'js/backups.js', 'js/sync.js', 'js/app.js',
+  'js/config.js', 'js/calc.js', 'js/store.js', 'js/prices.js', 'js/charts.js', 'js/advisor.js', 'js/insights.js', 'js/voice.js', 'js/backups.js', 'js/sync.js', 'js/app.js',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'
 ];
 var TIMEOUT = 4000;

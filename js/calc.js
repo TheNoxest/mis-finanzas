@@ -298,7 +298,7 @@
         p = map[key] = {
           key: key, priceKey: priceKey(op.assetType, op.ticker), assetType: op.assetType,
           ticker: String(op.ticker).trim().toUpperCase(), currency: op.currency,
-          quantity: 0, cost: 0, realized: 0, fees: 0, operations: 0
+          quantity: 0, cost: 0, realized: 0, fees: 0, operations: 0, sales: []
         };
         order.push(key);
       }
@@ -316,6 +316,9 @@
         var sellQ = Math.min(q, p.quantity);
         var costOut = p.quantity > 0 ? round(p.cost * sellQ / p.quantity, 2) : 0;
         p.realized = round(p.realized + sellQ * px - fee - costOut, 2);
+        // Cada venta con su fecha (para el resumen anual / impuestos)
+        p.sales.push({ id: op.id, date: op.date, quantity: sellQ, proceeds: round(sellQ * px, 2), fee: round(fee, 2),
+          cost: costOut, gain: round(sellQ * px - fee - costOut, 2) });
         p.quantity = round(p.quantity - sellQ, 8);
         p.cost = round(p.cost - costOut, 2);
         if (p.quantity <= 0) { p.quantity = 0; p.cost = 0; } // posición cerrada

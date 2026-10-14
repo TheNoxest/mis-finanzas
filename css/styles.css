@@ -567,3 +567,20 @@ main { padding-bottom: 96px; }   /* que el botón «+» no tape lo último de ca
 /* Aviso de arranque fallido (index.html) */
 .boot-error { margin: 16px 0; padding: 16px; border-radius: var(--radius); background: var(--warn-bg); color: var(--warn-ink); }
 .boot-error p { margin: 6px 0 12px; }
+
+/* ---------- Registro por voz / frase ---------- */
+.q-say { display: flex; gap: 8px; align-items: center; margin: 10px 0 2px; }
+.q-say input { flex: 1; min-width: 0; }
+.q-say .mic { flex: none; width: 44px; height: 44px; }
+.q-say .mic.listening { background: var(--accent); color: #fff; animation: mic-pulse 1.2s infinite; }
+@keyframes mic-pulse { 0% { box-shadow: 0 0 0 0 rgba(42, 120, 214, .5); } 70% { box-shadow: 0 0 0 10px rgba(42, 120, 214, 0); } 100% { box-shadow: 0 0 0 0 rgba(42, 120, 214, 0); } }
+.q-heard { margin: 4px 0 0; font-size: .85rem; color: var(--ink-2); }
+.q-heard b { color: var(--ink); }
+.q-heard .miss { color: var(--warn-ink); }
+
+/* ---------- Resumen mensual ---------- */
+.summary-card .summary-lines { margin: 6px 0 0; padding-left: 18px; }
+.summary-card .summary-lines li { margin: 4px 0; line-height: 1.45; }
+.summary-card .card-head { margin-bottom: 0; }
+.review-box { margin-top: 12px; padding: 12px; border-radius: 12px; background: var(--warn-bg); color: var(--warn-ink); }
+.review-box ul { margin: 6px 0 10px; padding-left: 18px; }
