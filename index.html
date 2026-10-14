@@ -1,0 +1,698 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f9f9f7">
+  <title>Mis Finanzas</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png" type="image/png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Mis Finanzas">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <!-- Iconos reutilizables -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></symbol>
+    <symbol id="i-moves" viewBox="0 0 24 24"><path d="M7 20V4M3 8l4-4 4 4M17 4v16M13 16l4 4 4-4"/></symbol>
+    <symbol id="i-wallet" viewBox="0 0 24 24"><path d="M19 7V5a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-4a2 2 0 0 0 0 4h4v2a1 1 0 0 1-1 1H5a2 2 0 0 1-2-2V6"/></symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 3v18h18M7 15l4-4 3 3 6-6"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.9-3.9M4 4v4h4M4 13a8 8 0 0 0 14.9 3.9M20 20v-4h-4"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+    <symbol id="i-bank" viewBox="0 0 24 24"><path d="M3 10h18L12 4zM5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18"/></symbol>
+    <symbol id="i-cash" viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/></symbol>
+    <symbol id="i-phone" viewBox="0 0 24 24"><rect x="6" y="2.5" width="12" height="19" rx="2"/><path d="M11 18h2"/></symbol>
+    <symbol id="i-piggy" viewBox="0 0 24 24"><path d="M5 11a7 6 0 0 1 12-3h2v3l2 1v3h-2.5a7 6 0 0 1-2.5 2.5V20h-3v-2h-3v2H7v-3a6 6 0 0 1-2-6zM15 11h.01"/></symbol>
+    <symbol id="i-in" viewBox="0 0 24 24"><path d="M17 7 7 17M7 9v8h8"/></symbol>
+    <symbol id="i-out" viewBox="0 0 24 24"><path d="M7 17 17 7M9 7h8v8"/></symbol>
+    <symbol id="i-swap" viewBox="0 0 24 24"><path d="M4 8h15l-3-3M20 16H5l3 3"/></symbol>
+    <symbol id="i-analysis" viewBox="0 0 24 24"><path d="M3 21h18M6 17v-5M11 17V7M16 17v-8M21 17V4"/></symbol>
+    <symbol id="i-bulb" viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2V17h5v-1.1c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></symbol>
+    <symbol id="i-dot" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/></symbol>
+  </svg>
+
+  <header class="topbar">
+    <div class="brand">Mis Finanzas</div>
+    <div class="topbar-right">
+      <span class="sync" id="sync-status" aria-live="polite"></span>
+      <button type="button" class="icon-btn" data-action="open-search" title="Buscar activo" aria-label="Buscar activo"><svg class="ic"><use href="#i-search"/></svg></button>
+      <button type="button" class="icon-btn" data-action="refresh" title="Actualizar precios" aria-label="Actualizar precios"><svg class="ic"><use href="#i-refresh"/></svg></button>
+      <button type="button" class="icon-btn" data-goto="ajustes" id="settings-btn" title="Ajustes" aria-label="Ajustes"><svg class="ic"><use href="#i-gear"/></svg><span class="cloud-dot hidden" id="cloud-dot"></span></button>
+    </div>
+  </header>
+
+  <nav class="tabs" id="tabs" aria-label="Secciones">
+    <button type="button" data-view="inicio"><svg class="ic"><use href="#i-home"/></svg><span>Inicio</span></button>
+    <button type="button" data-view="movimientos"><svg class="ic"><use href="#i-moves"/></svg><span>Movimientos</span></button>
+    <button type="button" data-view="cuentas"><svg class="ic"><use href="#i-wallet"/></svg><span>Cuentas</span></button>
+    <button type="button" data-view="inversiones"><svg class="ic"><use href="#i-chart"/></svg><span>Inversiones</span></button>
+    <button type="button" data-view="analisis"><svg class="ic"><use href="#i-analysis"/></svg><span>Análisis</span></button>
+  </nav>
+
+  <main>
+    <!-- ================= INICIO ================= -->
+    <section id="view-inicio" class="view">
+      <div id="warnings"></div>
+      <div id="backup-reminder"></div>
+
+      <div class="hero">
+        <div class="eyebrow">¿Cuánto tengo?</div>
+        <div class="hero-value" id="hero-total">—</div>
+        <div class="hero-split">
+          <button type="button" class="split-item" data-goto="cuentas">
+            <span class="split-label">En cuentas</span><span class="split-value" id="hero-cash">—</span>
+          </button>
+          <button type="button" class="split-item" data-goto="inversiones">
+            <span class="split-label">En inversiones</span><span class="split-value" id="hero-inv">—</span>
+          </button>
+        </div>
+        <div class="hero-third hidden" id="hero-third"></div>
+      </div>
+
+      <div class="tiles">
+        <div class="tile">
+          <div class="eyebrow">¿Cuánto gasté? · <span id="month-name"></span></div>
+          <div class="tile-value" id="t-expense">—</div>
+          <div class="tile-rows" id="t-month"></div>
+        </div>
+        <div class="tile">
+          <div class="eyebrow">¿Cómo van mis inversiones?</div>
+          <div class="tile-value" id="t-pnl">—</div>
+          <div class="tile-rows" id="t-inv"></div>
+        </div>
+      </div>
+
+      <div class="card" id="home-recs">
+        <div class="card-head"><h2>Recomendaciones</h2><button type="button" class="link" data-goto="consejos">Ver todas</button></div>
+        <div id="home-recs-body"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>Mis cuentas</h2><button type="button" class="link" data-goto="cuentas">Ver todas</button></div>
+        <ul class="list" id="home-accounts"></ul>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>Últimos movimientos</h2><button type="button" class="link" data-goto="movimientos">+ Registrar</button></div>
+        <ul class="list" id="recent"></ul>
+      </div>
+    </section>
+
+    <!-- ================= MOVIMIENTOS ================= -->
+    <section id="view-movimientos" class="view">
+      <form id="tx-form" class="card form" autocomplete="off" novalidate>
+        <div class="seg seg-3" role="radiogroup" aria-label="Tipo de movimiento">
+          <input type="radio" name="type" id="t-egreso" value="egreso" checked><label for="t-egreso">Gasto</label>
+          <input type="radio" name="type" id="t-ingreso" value="ingreso"><label for="t-ingreso">Ingreso</label>
+          <input type="radio" name="type" id="t-transf" value="transferencia"><label for="t-transf">Transferencia</label>
+        </div>
+
+        <label class="amount-field">
+          <span class="sr-only">Monto</span>
+          <input name="amount" type="number" inputmode="decimal" step="any" min="0" placeholder="0.00" required aria-label="Monto">
+          <span class="amount-cur" id="tx-cur">USD</span>
+        </label>
+
+        <div class="grid">
+          <label class="only-flow">Cuenta<select name="accountId"></select></label>
+          <label class="only-flow">Categoría<select name="categoryId"></select></label>
+          <label class="only-transfer">Desde<select name="fromAccountId"></select></label>
+          <label class="only-transfer">Hacia<select name="toAccountId"></select></label>
+          <label class="only-transfer only-fx span2 hidden">Monto recibido <span class="muted" id="to-cur"></span>
+            <input name="toAmount" type="number" inputmode="decimal" step="any" min="0">
+          </label>
+          <label class="only-flow">Método de pago<select name="methodId"></select></label>
+          <label>Fecha<input name="date" type="date" required></label>
+          <label class="span2">Nota<input name="note" type="text" maxlength="140" placeholder="Opcional"></label>
+        </div>
+        <p class="hint" id="tx-preview"></p>
+        <div class="actions">
+          <button type="button" class="danger hidden" data-action="delete-tx">Eliminar</button>
+          <button type="button" class="ghost hidden" data-action="cancel-tx">Cancelar</button>
+          <button type="submit" class="primary" id="tx-submit">Guardar</button>
+        </div>
+        <input type="hidden" name="editId">
+      </form>
+
+      <div class="card">
+        <div class="card-head wrap">
+          <h2>Historial <small class="muted small">· toca uno para editarlo</small></h2>
+          <div class="filters">
+            <input type="month" id="f-month" aria-label="Mes">
+            <select id="f-type" aria-label="Tipo">
+              <option value="">Todos</option>
+              <option value="ingreso">Ingresos</option>
+              <option value="egreso">Gastos</option>
+              <option value="transferencia">Transferencias</option>
+            </select>
+            <select id="f-account" aria-label="Cuenta"></select>
+          </div>
+        </div>
+        <div class="totals" id="tx-totals"></div>
+        <ul class="list" id="tx-list"></ul>
+      </div>
+    </section>
+
+    <!-- ================= CUENTAS ================= -->
+    <section id="view-cuentas" class="view">
+      <div class="subtabs" role="tablist" aria-label="Secciones de cuentas">
+        <button type="button" role="tab" data-acc-tab="cuentas">Mis cuentas</button>
+        <button type="button" role="tab" data-acc-tab="cobrar">Por cobrar</button>
+        <button type="button" role="tab" data-acc-tab="pagar">Por pagar</button>
+        <button type="button" role="tab" data-acc-tab="cambios">Cambios</button>
+      </div>
+      <datalist id="people-list"></datalist>
+
+      <!-- ---------- Mis cuentas ---------- -->
+      <div id="acc-panel-cuentas" class="acc-panel">
+      <div class="hero compact">
+        <div class="eyebrow">Total en cuentas</div>
+        <div class="hero-value" id="acc-total">—</div>
+        <div class="hero-sub" id="acc-month"></div>
+      </div>
+
+      <div class="acc-grid" id="acc-grid"></div>
+
+      <form id="acc-form" class="card form" autocomplete="off" novalidate>
+        <h2 id="acc-form-title">Nueva cuenta</h2>
+        <div class="grid">
+          <label class="span2">Nombre<input name="label" maxlength="40" placeholder="Ej.: Banco, Efectivo, Binance" required></label>
+          <label>Tipo
+            <select name="kind"></select>
+          </label>
+          <label>Moneda<select name="currency"></select></label>
+          <label class="span2">Saldo inicial<input name="initialBalance" type="number" inputmode="decimal" step="any" placeholder="0.00"></label>
+        </div>
+        <p class="hint">El saldo inicial es lo que había en la cuenta antes de empezar a registrar. Luego el saldo se calcula solo.</p>
+        <div class="actions">
+          <button type="button" class="danger hidden" data-action="delete-acc">Eliminar</button>
+          <button type="button" class="ghost hidden" data-action="cancel-acc">Cancelar</button>
+          <button type="submit" class="primary">Guardar cuenta</button>
+        </div>
+        <input type="hidden" name="editId">
+      </form>
+      </div>
+
+      <!-- ---------- Por cobrar / Por pagar (mismo panel) ---------- -->
+      <div id="acc-panel-deudas" class="acc-panel hidden">
+        <div class="hero compact">
+          <div class="eyebrow" id="debt-eyebrow">Te deben</div>
+          <div class="hero-value" id="debt-total">—</div>
+          <div class="hero-sub" id="debt-sub"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head wrap">
+            <h2 id="debt-list-title">Pendientes</h2>
+            <div class="seg seg-sm" role="radiogroup" aria-label="Filtro">
+              <input type="radio" name="debt-filter" id="df-open" value="open" checked><label for="df-open">Pendientes</label>
+              <input type="radio" name="debt-filter" id="df-paid" value="paid"><label for="df-paid">Saldadas</label>
+              <input type="radio" name="debt-filter" id="df-all" value="all"><label for="df-all">Todas</label>
+            </div>
+          </div>
+          <ul class="list" id="debt-list"></ul>
+        </div>
+
+        <div class="card hidden" id="debt-payments">
+          <h2 id="pay-title">Abonos</h2>
+          <div class="progress" id="pay-progress"></div>
+          <ul class="list" id="pay-list"></ul>
+          <form class="grid pay-form" id="pay-form" autocomplete="off" novalidate>
+            <label>Monto<input name="amount" type="number" inputmode="decimal" step="any" min="0"></label>
+            <label>Fecha<input name="date" type="date"></label>
+            <label class="span2"><span id="pay-acc-label">Entra en</span><select name="accountId"></select></label>
+            <label class="span2">Nota<input name="note" maxlength="100" placeholder="Opcional"></label>
+            <div class="span2 actions" style="margin-top:0"><button type="submit" class="primary" id="pay-submit">Registrar abono</button></div>
+          </form>
+        </div>
+
+        <form id="debt-form" class="card form" autocomplete="off" novalidate>
+          <h2 id="debt-form-title">Nueva cuenta por cobrar</h2>
+          <div class="grid">
+            <label class="span2"><span id="debt-person-label">¿Quién te debe?</span><input name="person" list="people-list" maxlength="60" placeholder="Nombre" required></label>
+            <label class="span2">Concepto<input name="concept" maxlength="80" placeholder="Ej.: préstamo, venta, servicio"></label>
+            <label>Monto<input name="amount" type="number" inputmode="decimal" step="any" min="0" required></label>
+            <label>Moneda<select name="currency"></select></label>
+            <label>Fecha<input name="date" type="date" required></label>
+            <label>Vence <span class="muted">(opcional)</span><input name="dueDate" type="date"></label>
+            <label class="span2"><span id="debt-acc-label">¿Le prestaste dinero? Salió de</span><select name="accountId"></select></label>
+            <label class="span2">Nota<input name="note" maxlength="140" placeholder="Opcional"></label>
+          </div>
+          <p class="hint" id="debt-hint"></p>
+          <div class="actions">
+            <button type="button" class="danger hidden" data-action="delete-debt">Eliminar</button>
+            <button type="button" class="ghost hidden" data-action="cancel-debt">Cancelar</button>
+            <button type="submit" class="primary">Guardar</button>
+          </div>
+          <input type="hidden" name="editId">
+        </form>
+      </div>
+
+      <!-- ---------- Cambios de divisas ---------- -->
+      <div id="acc-panel-cambios" class="acc-panel hidden">
+        <div class="hero compact">
+          <div class="eyebrow">Ganancia por cambios · <span id="fx-month-name"></span></div>
+          <div class="hero-value" id="fx-profit">—</div>
+          <div class="stat-row" id="fx-stats"></div>
+        </div>
+
+        <form id="fx-form" class="card form" autocomplete="off" novalidate>
+          <h2 id="fx-form-title">Nuevo cambio</h2>
+          <div class="grid">
+            <label class="span2">Cliente<input name="client" list="people-list" maxlength="60" placeholder="Nombre del cliente"></label>
+            <label>Fecha<input name="date" type="date" required></label>
+            <label>Estado
+              <select name="status">
+                <option value="completada">Completado</option>
+                <option value="pendiente_entrega">Recibido, falta entregar</option>
+                <option value="pendiente_cobro">Entregado, falta cobrar</option>
+              </select>
+            </label>
+          </div>
+
+          <h3>El cliente te envía</h3>
+          <div class="grid">
+            <label>Monto a cambiar<input name="amount" type="number" inputmode="decimal" step="any" min="0" placeholder="0.00"></label>
+            <label>Moneda<select name="inCurrency"></select></label>
+            <label class="span2">Entra en<select name="inAccountId"></select></label>
+          </div>
+
+          <h3>Tú entregas</h3>
+          <div class="grid">
+            <label>Moneda<select name="outCurrency"></select></label>
+            <label><span id="fx-rate-label">Tasa</span><input name="rate" type="number" inputmode="decimal" step="any" min="0"></label>
+            <label class="span2">Sale de<select name="outAccountId"></select></label>
+          </div>
+          <div class="rate-help hint" id="fx-rate-help"></div>
+
+          <h3>Tu comisión</h3>
+          <div class="grid">
+            <label>Tipo
+              <select name="comMode">
+                <option value="porcentaje">% del monto</option>
+                <option value="fijo">Monto fijo</option>
+              </select>
+            </label>
+            <label><span id="fx-com-label">Porcentaje</span><input name="comValue" type="number" inputmode="decimal" step="any" min="0" placeholder="0"></label>
+            <label class="hidden" id="fx-com-cur">Moneda<select name="comCurrency"></select></label>
+            <label class="span2">Cómo se cobra
+              <select name="comCharge">
+                <option value="descontada">Descontada de lo que entregas</option>
+                <option value="aparte">Aparte (el cliente la suma a lo que envía)</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="quote" id="fx-quote"></div>
+          <label class="deliver">Monto a entregar <span class="muted" id="fx-deliver-hint">(se calcula solo)</span>
+            <input name="delivered" type="number" inputmode="decimal" step="any" min="0">
+          </label>
+
+          <h3 class="row-between">Costos que pagas tú <button type="button" class="link" data-action="add-cost">+ Añadir costo</button></h3>
+          <div id="fx-costs"></div>
+          <p class="hint" id="fx-costs-hint">Comisiones bancarias, de red, de retiro… se restan de tu ganancia.</p>
+
+          <div class="profit-box" id="fx-profit-box"></div>
+          <label>Nota<input name="note" maxlength="140" placeholder="Opcional"></label>
+          <div class="actions">
+            <button type="button" class="danger hidden" data-action="delete-fx">Eliminar</button>
+            <button type="button" class="ghost hidden" data-action="cancel-fx">Cancelar</button>
+            <button type="submit" class="primary">Guardar cambio</button>
+          </div>
+          <input type="hidden" name="editId">
+        </form>
+
+        <div class="card">
+          <div class="card-head wrap"><h2>Historial de cambios <small class="muted small">· toca uno para editarlo</small></h2>
+            <input type="month" id="fx-month" aria-label="Mes" class="month-filter"></div>
+          <div class="totals" id="fx-totals"></div>
+          <ul class="list" id="fx-list"></ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= INVERSIONES ================= -->
+    <section id="view-inversiones" class="view">
+      <div class="search" role="search">
+        <svg class="ic"><use href="#i-search"/></svg>
+        <input id="asset-search" type="search" placeholder="Buscar activo: BTC, ETH, AAPL…" autocomplete="off" spellcheck="false"
+          aria-label="Buscar activo" aria-controls="search-results" aria-expanded="false" role="combobox">
+        <ul class="search-results hidden" id="search-results" role="listbox"></ul>
+      </div>
+      <div class="hero compact">
+        <div class="eyebrow">Valor actual del portafolio</div>
+        <div class="hero-value" id="pf-value">—</div>
+        <div class="stat-row" id="pf-stats"></div>
+      </div>
+
+      <div class="card" id="dist-card">
+        <h2>Distribución</h2>
+        <div id="dist-type"></div>
+        <h3>Por activo</h3>
+        <div id="dist-asset" class="hbars"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>Mis activos</h2><span class="muted small" id="pf-updated"></span></div>
+        <ul class="list assets" id="pf-list"></ul>
+      </div>
+
+      <details class="card form" id="inv-details">
+        <summary><h2 id="inv-form-title">Registrar compra o venta</h2></summary>
+        <form id="inv-form" autocomplete="off" novalidate>
+          <div class="seg" role="radiogroup" aria-label="Operación">
+            <input type="radio" name="side" id="s-compra" value="compra" checked><label for="s-compra">Compra</label>
+            <input type="radio" name="side" id="s-venta" value="venta"><label for="s-venta">Venta</label>
+          </div>
+          <div class="grid">
+            <label>Tipo de activo
+              <select name="assetType">
+                <option value="accion">Acción</option>
+                <option value="etf">ETF</option>
+                <option value="cripto">Cripto</option>
+                <option value="divisa">Divisa</option>
+                <option value="otro">Otro</option>
+              </select>
+            </label>
+            <label>Ticker<input name="ticker" type="text" maxlength="20" placeholder="AAPL, BTC…" required list="ticker-list"></label>
+            <label>Cantidad<input name="quantity" type="number" inputmode="decimal" step="any" min="0" required></label>
+            <label>Precio unitario<input name="price" type="number" inputmode="decimal" step="any" min="0" required></label>
+            <label>Moneda<select name="currency"></select></label>
+            <label>Comisión<input name="fee" type="number" inputmode="decimal" step="any" min="0" placeholder="0"></label>
+            <label>Fecha<input name="date" type="date" required></label>
+            <label><span id="inv-acc-label">Pagado desde</span><select name="accountId"></select></label>
+            <label>Guardado en<select name="custodyAccountId"></select></label>
+            <label class="span2">Nota<input name="note" type="text" maxlength="140" placeholder="Opcional"></label>
+          </div>
+          <datalist id="ticker-list"></datalist>
+          <p class="hint" id="inv-preview"></p>
+          <div class="actions">
+            <button type="button" class="danger hidden" data-action="delete-inv">Eliminar</button>
+            <button type="button" class="ghost hidden" data-action="cancel-inv">Cancelar</button>
+            <button type="submit" class="primary">Guardar</button>
+          </div>
+          <input type="hidden" name="editId">
+        </form>
+      </details>
+
+      <div class="card">
+        <h2>Historial de operaciones <small class="muted small">· toca una para editarla</small></h2>
+        <ul class="list" id="inv-list"></ul>
+      </div>
+    </section>
+
+    <!-- ================= FICHA DE CUENTA ================= -->
+    <section id="view-cuenta" class="view">
+      <button type="button" class="back" data-action="account-back"><svg class="ic"><use href="#i-back"/></svg>Cuentas</button>
+      <div class="asset-head">
+        <div class="asset-logo" id="ac-icon" aria-hidden="true"></div>
+        <div class="asset-id"><div class="asset-name" id="ac-name">—</div><div class="asset-sub" id="ac-sub"></div></div>
+      </div>
+      <div class="hero compact">
+        <div class="eyebrow">Valor total de la cuenta</div>
+        <div class="hero-value" id="ac-total">—</div>
+        <div class="stat-row" id="ac-stats"></div>
+      </div>
+      <div class="btn-row" id="ac-actions"></div>
+      <div class="card">
+        <div class="card-head"><h2>Activos en esta cuenta</h2></div>
+        <div id="ac-dist"></div>
+        <ul class="list assets" id="ac-holdings"></ul>
+        <p class="hint" id="ac-holdings-note"></p>
+      </div>
+      <div class="card">
+        <div class="card-head"><h2>Movimientos de la cuenta</h2><button type="button" class="link" data-action="account-all-moves">Ver en Movimientos</button></div>
+        <ul class="list" id="ac-moves"></ul>
+      </div>
+    </section>
+
+    <!-- ================= FICHA DE ACTIVO ================= -->
+    <section id="view-activo" class="view">
+      <button type="button" class="back" data-action="asset-back"><svg class="ic"><use href="#i-back"/></svg>Inversiones</button>
+      <div class="asset-head">
+        <div class="asset-logo" id="ad-logo" aria-hidden="true"></div>
+        <div class="asset-id">
+          <div class="asset-name" id="ad-name">—</div>
+          <div class="asset-sub" id="ad-sub"></div>
+        </div>
+      </div>
+      <div class="asset-price-row">
+        <span class="asset-price" id="ad-price">—</span>
+        <span class="asset-change" id="ad-change"></span>
+      </div>
+      <div class="live-status" id="ad-live" aria-live="polite"></div>
+
+      <div class="card">
+        <div class="range-chips" id="ad-ranges" role="group" aria-label="Rango del gráfico"></div>
+        <div class="legend" id="ad-legend"></div>
+        <div class="chart" id="ad-chart"></div>
+        <p class="hint" id="ad-chart-note"></p>
+        <div class="stat-row" id="ad-stats"></div>
+      </div>
+
+      <div class="card" id="ad-position"></div>
+    </section>
+
+    <!-- ================= ANÁLISIS ================= -->
+    <section id="view-analisis" class="view">
+      <div class="filterbar" role="group" aria-label="Filtros del análisis">
+        <select id="a-range" aria-label="Periodo">
+          <option value="mes">Este mes</option>
+          <option value="3m">Últimos 3 meses</option>
+          <option value="6m" selected>Últimos 6 meses</option>
+          <option value="12m">Últimos 12 meses</option>
+          <option value="anio">Este año</option>
+          <option value="todo">Todo</option>
+          <option value="custom">Personalizado…</option>
+        </select>
+        <input type="date" id="a-from" class="hidden" aria-label="Desde">
+        <input type="date" id="a-to" class="hidden" aria-label="Hasta">
+        <select id="a-category" aria-label="Categoría"></select>
+        <select id="a-account" aria-label="Cuenta"></select>
+        <select id="a-asset" aria-label="Tipo de activo">
+          <option value="">Todos los activos</option>
+          <option value="accion">Acciones</option>
+          <option value="etf">ETF</option>
+          <option value="cripto">Cripto</option>
+          <option value="divisa">Divisas</option>
+          <option value="otro">Otros</option>
+        </select>
+        <button type="button" class="link hidden" id="a-clear">Quitar filtros</button>
+      </div>
+      <p class="range-label" id="a-range-label"></p>
+
+      <div class="stat-tiles" id="a-kpis"></div>
+
+      <div class="card">
+        <div class="card-head"><h2>Flujo de caja mensual</h2></div>
+        <div class="legend" id="cf-legend"></div>
+        <div class="chart" id="cf-chart"></div>
+        <details class="table-toggle"><summary>Ver tabla</summary><div class="table-wrap" id="cf-table"></div></details>
+      </div>
+
+      <div class="card">
+        <div class="card-head wrap">
+          <h2 id="cat-title">Gasto por categoría</h2>
+          <div class="seg seg-sm" role="radiogroup" aria-label="Tipo">
+            <input type="radio" name="cat-type" id="ct-egreso" value="egreso" checked><label for="ct-egreso">Gastos</label>
+            <input type="radio" name="cat-type" id="ct-ingreso" value="ingreso"><label for="ct-ingreso">Ingresos</label>
+          </div>
+        </div>
+        <p class="hint" id="cat-sub"></p>
+        <div class="catbars" id="cat-bars"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>Tasa de ahorro mensual</h2></div>
+        <p class="hint">Qué parte de lo que ingresó cada mes no se gastó: (ingresos − gastos) ÷ ingresos.</p>
+        <div class="chart" id="sr-chart"></div>
+        <details class="table-toggle"><summary>Ver tabla</summary><div class="table-wrap" id="sr-table"></div></details>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>Evolución del patrimonio</h2></div>
+        <div class="legend" id="nw-legend"></div>
+        <div class="chart" id="nw-chart"></div>
+        <p class="hint" id="nw-note"></p>
+        <details class="table-toggle"><summary>Ver tabla</summary><div class="table-wrap" id="nw-table"></div></details>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>Rendimiento por activo</h2></div>
+        <div class="table-wrap" id="perf-table"></div>
+        <p class="hint" id="perf-ops"></p>
+      </div>
+    </section>
+
+    <!-- ================= CONSEJOS ================= -->
+    <section id="view-consejos" class="view">
+      <div class="hero compact">
+        <div class="eyebrow">Recomendaciones personalizadas</div>
+        <div class="hero-value small-hero" id="recs-headline">—</div>
+        <div class="hero-sub" id="recs-summary"></div>
+      </div>
+      <p class="disclaimer">Son sugerencias automáticas calculadas con reglas fijas a partir de tus datos. No son asesoría financiera profesional ni una recomendación de compra o venta de ningún activo.</p>
+
+      <div class="card" id="profile-card"></div>
+
+      <form class="card form hidden" id="profile-form" autocomplete="off">
+        <h2>Tu perfil de inversor</h2>
+        <p class="hint">5 preguntas, menos de un minuto. Puedes cambiarlo cuando quieras.</p>
+        <div id="quiz"></div>
+        <h3>¿Qué objetivos tienes?</h3>
+        <div class="chips" id="goals"></div>
+        <div class="grid">
+          <label>Fondo de emergencia (meses de gastos)
+            <select name="emergencyMonths">
+              <option value="">Según mi perfil</option>
+              <option value="3">3 meses</option><option value="4">4 meses</option><option value="6">6 meses</option>
+              <option value="9">9 meses</option><option value="12">12 meses</option>
+            </select>
+          </label>
+          <label>Meta de ahorro (% de los ingresos)
+            <input name="savingsGoal" type="number" min="1" max="90" step="1" value="20" inputmode="numeric">
+          </label>
+        </div>
+        <div class="actions">
+          <button type="button" class="ghost" data-action="cancel-profile">Cancelar</button>
+          <button type="submit" class="primary">Ver mi perfil</button>
+        </div>
+      </form>
+
+      <div class="recs" id="recs-list"></div>
+    </section>
+
+    <!-- ================= AJUSTES ================= -->
+    <section id="view-ajustes" class="view">
+      <div class="card" id="sync-card">
+        <h2>Sincronizar con el teléfono</h2>
+        <p class="hint" style="margin-top:0">Usa la app en el PC y en el móvil con los mismos datos. Se cifran en tu dispositivo con una contraseña que solo tú conoces antes de subir a la nube.</p>
+        <div id="sync-body"></div>
+      </div>
+      <div class="card">
+        <h2>Moneda base y tasas de cambio</h2>
+        <div class="row-between">
+          <label class="inline">Moneda base <select id="base-select"></select></label>
+          <label class="switch"><input type="checkbox" id="auto-fx"> <span>Actualizar tasas automáticamente</span></label>
+        </div>
+        <p class="hint" id="fx-info"></p>
+        <ul class="list editable" id="rates-list"></ul>
+        <form class="add-row" id="add-currency">
+          <input name="code" placeholder="Moneda (GBP, MXN…)" maxlength="10" required list="currency-codes" autocomplete="off">
+          <input name="rate" type="number" step="any" min="0" placeholder="Tasa (vacío = en vivo)">
+          <button class="primary" type="submit">Añadir</button>
+        </form>
+        <datalist id="currency-codes">
+          <option value="GBP">Libra esterlina</option>
+          <option value="MXN">Peso mexicano</option>
+          <option value="COP">Peso colombiano</option>
+          <option value="ARS">Peso argentino</option>
+          <option value="BRL">Real brasileño</option>
+          <option value="CLP">Peso chileno</option>
+          <option value="PEN">Sol peruano</option>
+          <option value="VES">Bolívar</option>
+          <option value="CHF">Franco suizo</option>
+          <option value="CAD">Dólar canadiense</option>
+          <option value="JPY">Yen</option>
+          <option value="TRY">Lira turca</option>
+          <option value="PLN">Esloti</option>
+          <option value="DOP">Peso dominicano</option>
+          <option value="UYU">Peso uruguayo</option>
+          <option value="USDC">USD Coin (1 USD)</option>
+        </datalist>
+        <p class="hint">Deja la tasa vacía para conectarla a las tasas automáticas (en vivo si Binance cotiza esa moneda). Si escribes una tasa, queda fija.</p>
+      </div>
+
+      <div class="card">
+        <h2>Fuentes de precios</h2>
+        <ul class="sources">
+          <li><b>Cripto:</b> Binance (precio vs USDT, sin API key).</li>
+          <li><b>Acciones y ETF:</b> Finnhub (gratis, bolsas de EE. UU.). Crea tu key en <a href="https://finnhub.io/register" target="_blank" rel="noopener">finnhub.io</a>.</li>
+          <li><b>Divisas:</b> ExchangeRate-API, con respaldo en Frankfurter (BCE).</li>
+          <li><b>Otros activos:</b> precio manual desde «Mis activos».</li>
+        </ul>
+        <form class="add-row" id="finnhub-form">
+          <input name="key" type="password" placeholder="API key de Finnhub" autocomplete="off">
+          <button class="primary" type="submit">Guardar</button>
+        </form>
+        <p class="hint" id="finnhub-info"></p>
+      </div>
+
+      <div class="card">
+        <h2>Categorías</h2>
+        <div class="two-col">
+          <div>
+            <h3>Ingresos</h3>
+            <ul class="list editable" id="cat-ingreso"></ul>
+            <form class="add-row" data-add-cat="ingreso"><input name="label" placeholder="Nueva categoría" required><button class="primary" type="submit">+</button></form>
+          </div>
+          <div>
+            <h3>Gastos</h3>
+            <ul class="list editable" id="cat-egreso"></ul>
+            <form class="add-row" data-add-cat="egreso"><input name="label" placeholder="Nueva categoría" required><button class="primary" type="submit">+</button></form>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Métodos de pago</h2>
+        <ul class="list editable" id="methods-list"></ul>
+        <form class="add-row" id="add-method"><input name="label" placeholder="Nuevo método" required><button class="primary" type="submit">+</button></form>
+      </div>
+
+      <div class="card">
+        <h2>Datos</h2>
+        <div class="btn-row">
+          <button type="button" data-action="csv-tx">Movimientos (CSV)</button>
+          <button type="button" data-action="csv-acc">Cuentas (CSV)</button>
+          <button type="button" data-action="csv-inv">Inversiones (CSV)</button>
+          <button type="button" data-action="csv-debts">Por cobrar / pagar (CSV)</button>
+          <button type="button" data-action="csv-fx">Cambios de divisas (CSV)</button>
+          <button type="button" data-action="backup">Copia de seguridad (JSON)</button>
+          <label class="btn">Restaurar copia<input type="file" id="restore" accept=".json,application/json" hidden></label>
+        </div>
+        <div class="btn-row">
+          <button type="button" data-action="sample">Cargar datos de ejemplo</button>
+          <button type="button" class="danger" data-action="reset">Borrar todo</button>
+        </div>
+        <p class="hint">Los datos se guardan en este navegador. Haz copias de seguridad periódicas.</p>
+      </div>
+    </section>
+  </main>
+
+  <!-- Precio manual -->
+  <dialog id="price-dialog">
+    <form method="dialog" id="price-form">
+      <h2 id="price-title">Precio manual</h2>
+      <p class="hint" id="price-help"></p>
+      <label>Precio por unidad <span class="muted" id="price-cur"></span>
+        <input name="price" type="number" step="any" min="0" inputmode="decimal">
+      </label>
+      <div class="actions">
+        <button value="cancel" formnovalidate class="ghost">Cancelar</button>
+        <button value="ok" class="primary">Guardar precio</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="tooltip" id="tooltip" role="tooltip"></div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="js/config.js"></script>
+  <script src="js/calc.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/prices.js"></script>
+  <script src="js/charts.js"></script>
+  <script src="js/advisor.js"></script>
+  <script src="js/sync.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

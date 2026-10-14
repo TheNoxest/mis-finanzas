@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pruebas de cálculo</title>
+  <style>
+    body { font: 14px/1.5 system-ui, sans-serif; max-width: 900px; margin: 24px auto; padding: 0 16px; }
+    .ok { color: #006300; } .fail { color: #c03232; font-weight: 600; }
+    h2 { font-size: 15px; margin: 20px 0 4px; }
+    li { font-family: ui-monospace, monospace; font-size: 13px; }
+    #summary { font-size: 18px; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <h1>Pruebas de cálculo — Fases 1 y 2</h1>
+  <p id="summary"></p>
+  <div id="out"></div>
+  <script src="../js/calc.js"></script>
+  <script src="../js/store.js"></script>
+  <script src="../js/advisor.js"></script>
+  <script src="../js/sync.js"></script>
+  <script>
+  (function () {
+    var out = document.getElementById('out'), pass = 0, fail = 0, ol;
+    function section(t) { var h = document.createElement('h2'); h.textContent = t; out.appendChild(h); ol = document.createElement('ol'); out.appendChild(ol); }
+    function eq(name, got, want) {
+      var ok = Object.is(got, want) || JSON.stringify(got) === JSON.stringify(want);
+      ok ? pass++ : fail++;
+      var li = document.createElement('li');
+      li.className = ok ? 'ok' : 'fail';
+      li.textContent = (ok ? '✓ ' : '✗ ') + name + ' → ' + JSON.stringify(got) + (ok ? '' : '  (esperado ' + JSON.stringify(want) + ')');
+      ol.appendChild(li);
+    }
+    var C = window.Calc;
+
+    section('Redondeo y conversión');
+    eq('round(1.005) = 1.01', C.round(1.005), 1.01);
+    eq('round(-1.005) = -1.01', C.round(-1.005), -1.01);
+    eq('round(0.1+0.2) = 0.3', C.round(0.1 + 0.2), 0.3);
+    eq('round(2.675) = 2.68', C.round(2.675), 2.68);
+    eq('round(1e-7, 8) = 1e-7', C.round(1e-7, 8), 1e-7);
+    eq('sum([0.1,0.2,0.3]) = 0.6', C.sum([0.1, 0.2, 0.3]), 0.6);
+    var rates = { USD: 1, EUR: 1.10, MXN: 0.05 };
+    eq('500 EUR → 550 USD', C.toBase(500, 'EUR', rates), 550);
+    eq('2000 MXN → 100 USD', C.toBase(2000, 'MXN', rates), 100);
+    eq('45.50 EUR → 50.05 USD', C.toBase(45.5, 'EUR', rates), 50.05);
+    eq('moneda sin tasa → NaN', isNaN(C.toBase(10, 'GBP', rates)), true);
+    eq('convert 1100 USD → EUR = 1000', C.convert(1100, 'USD', 'EUR', rates), 1000);
+    eq('convert 100 EUR → MXN = 2200', C.convert(100, 'EUR', 'MXN', rates), 2200);
+    var eur = C.rebaseRates(rates, 'EUR');
+    eq('rebase a EUR: USD = 1/1.1', eur.USD, 0.9090909091);
+    eq('rebase a EUR: MXN = 0.05/1.1', eur.MXN, 0.0454545455);
+    eq('550 USD en base EUR = 500 EUR', C.toBase(550, 'USD', eur), 500);
+
+    // ---------- Escenario completo (mismo que «Cargar datos de ejemplo») ----------
+    var accounts = [
+      { id: 'A', name: 'Banco principal', kind: 'banco', currency: 'USD', initialBalance: 10000 },
+      { id: 'B', name: 'Efectivo', kind: 'efectivo', currency: 'USD', initialBalance: 300 },
+      { id: 'C', name: 'Cuenta en euros', kind: 'banco', currency: 'EUR', initialBalance: 0 },
+      { id: 'D', name: 'Pesos MXN', kind: 'efectivo', currency: 'MXN', initialBalance: 5000 }
+    ];
+    var tx = [
+      { type: 'ingreso', date: '2026-10-01', amount: 3000, currency: 'USD', accountId: 'A', categoryId: 'sal' },
+      { type: 'ingreso', date: '2026-10-03', amount: 500, currency: 'EUR', accountId: 'C', categoryId: 'fre' },
+      { type: 'egreso', date: '2026-10-02', amount: 1200, currency: 'USD', accountId: 'A', categoryId: 'viv' },
+      { type: 'egreso', date: '2026-10-04', amount: 2000, currency: 'MXN', accountId: 'D', categoryId: 'com' },
+      { type: 'egreso', date: '2026-10-05', amount: 45.5, currency: 'EUR', accountId: 'C', categoryId: 'tra' },
+      { type: 'transferencia', date: '2026-10-02', amount: 200, currency: 'USD', fromAccountId: 'A', toAccountId: 'B', toAmount: 200, toCurrency: 'USD' },
+      { type: 'transferencia', date: '2026-10-03', amount: 1100, currency: 'USD', fromAccountId: 'A', toAccountId: 'C', toAmount: 1000, toCurrency: 'EUR' },
+      { type: 'egreso', date: '2026-10-06', amount: 35, currency: 'USD', accountId: 'B', categoryId: 'oci' }
+    ];
+    var inv = [
+      { id: 'a', side: 'compra', assetType: 'accion', ticker: 'AAPL', quantity: 10, price: 150, currency: 'USD', fee: 1, date: '2026-10-02', createdAt: 1, accountId: 'A' },
+      { id: 'b', side: 'compra', assetType: 'accion', ticker: 'AAPL', quantity: 5, price: 160, currency: 'USD', fee: 1, date: '2026-10-03', createdAt: 2, accountId: 'A' },
+      { id: 'c', side: 'venta', assetType: 'accion', ticker: 'AAPL', quantity: 6, price: 170, currency: 'USD', fee: 1, date: '2026-10-04', createdAt: 3, accountId: 'A' },
+      { id: 'd', side: 'compra', assetType: 'cripto', ticker: 'BTC', quantity: 0.05, price: 60000, currency: 'USD', fee: 5, date: '2026-10-04', createdAt: 4, accountId: 'A' },
+      { id: 'e', side: 'compra', assetType: 'etf', ticker: 'VWCE', quantity: 10, price: 100, currency: 'EUR', fee: 2, date: '2026-10-05', createdAt: 5, accountId: 'C' }
+    ];
+    var prices = {
+      'accion|AAPL': { price: 200, currency: 'USD', source: 'manual' },
+      'cripto|BTC': { price: 70000, currency: 'USD', change24h: 2, source: 'Binance' },
+      'etf|VWCE': { price: 110, currency: 'EUR', source: 'manual' }
+    };
+    var state = { settings: { rates: rates }, accounts: accounts, transactions: tx, investments: inv, prices: prices };
+
+    section('Ingresos y gastos (las transferencias no cuentan)');
+    var s = C.summarizeTransactions(tx, rates);
+    eq('Ingresos = 3000 + 550 = 3550', s.income, 3550);
+    eq('Gastos = 1200 + 100 + 50.05 + 35 = 1385.05', s.expense, 1385.05);
+    eq('Neto = 2164.95', s.net, 2164.95);
+    eq('Tasa de ahorro = 2164.95 / 3550 = 60.98 %', s.savingsRate, 60.98);
+    var r = C.summarizeTransactions(tx, rates, { from: '2026-10-02', to: '2026-10-04' });
+    eq('Rango 02–04: ingresos 550 / gastos 1300', [r.income, r.expense], [550, 1300]);
+    eq('Mayor gasto: vivienda 1200', C.totalsByCategory(tx, rates, 'egreso')[0], { categoryId: 'viv', total: 1200 });
+
+    section('Saldos por cuenta');
+    var bal = C.accountBalances(state, { from: '2026-10-01', to: '2026-10-31' });
+    eq('Banco: 10000 +3000 −1200 −200 −1100 −1501 −801 +1019 −3005 = 6212', bal[0].balance, 6212);
+    eq('Efectivo: 300 + 200 − 35 = 465', bal[1].balance, 465);
+    eq('Euros: 0 + 500 − 45.50 + 1000 − 1002 = 452.50 EUR', bal[2].balance, 452.5);
+    eq('Euros en base = 452.50 × 1.10 = 497.75 USD', bal[2].balanceBase, 497.75);
+    eq('Pesos: 5000 − 2000 = 3000 MXN → 150 USD', [bal[3].balance, bal[3].balanceBase], [3000, 150]);
+    eq('Banco entró este mes: 3000 + 1019 = 4019', bal[0].inflow, 4019);
+    eq('Banco salió este mes: 1200+200+1100+1501+801+3005 = 7807', bal[0].outflow, 7807);
+    eq('Comprobación: inicial + entradas − salidas = saldo', C.round(10000 + bal[0].inflow - bal[0].outflow), 6212);
+
+    section('Posiciones (costo promedio ponderado)');
+    eq('Total compra AAPL = 10×150+1 = 1501', C.operationTotal(inv[0]), 1501);
+    eq('Total venta AAPL = 6×170−1 = 1019', C.operationTotal(inv[2]), 1019);
+    var Pos = C.buildPositions(inv, rates);
+    var aapl = Pos.positions[0];
+    eq('AAPL: 9 u., costo 1381.20, realizado 98.20', [aapl.quantity, aapl.cost, aapl.realized], [9, 1381.2, 98.2]);
+    eq('AAPL costo promedio = 2302/15', aapl.avgPrice, 153.46666667);
+    eq('VWCE costo 1002 EUR → 1102.20 USD', [Pos.positions[2].cost, Pos.positions[2].costBase], [1002, 1102.2]);
+    var bad = inv.concat([{ id: 'x', side: 'venta', assetType: 'accion', ticker: 'AAPL', quantity: 20, price: 1, currency: 'USD', fee: 0, date: '2026-10-06' }]);
+    eq('Venta mayor a lo disponible se detecta', C.buildPositions(bad, rates).errors.length, 1);
+    var closeAll = [inv[0], { id: 'w', side: 'venta', assetType: 'accion', ticker: 'AAPL', quantity: 10, price: 140, currency: 'USD', fee: 0, date: '2026-10-09' }];
+    var ca = C.buildPositions(closeAll, rates).positions[0];
+    eq('Cerrar posición: 0 u., costo 0, pérdida −101', [ca.quantity, ca.cost, ca.realized], [0, 0, -101]);
+
+    section('Valoración de mercado (Fase 2)');
+    var pf = C.valuePortfolio(Pos.positions, prices, rates);
+    var row = function (t) { return pf.rows.filter(function (x) { return x.position.ticker === t; })[0]; };
+    eq('AAPL valor = 9 × 200 = 1800', row('AAPL').valueBase, 1800);
+    eq('AAPL G/P = 1800 − 1381.20 = 418.80 (30.32 %)', [row('AAPL').pnlBase, row('AAPL').pnlPct], [418.8, 30.32]);
+    eq('BTC valor = 0.05 × 70000 = 3500; G/P 495 (16.47 %)', [row('BTC').valueBase, row('BTC').pnlBase, row('BTC').pnlPct], [3500, 495, 16.47]);
+    eq('VWCE valor = 10 × 110 EUR = 1100 EUR → 1210 USD; G/P 107.80 (9.78 %)', [row('VWCE').valueBase, row('VWCE').pnlBase, row('VWCE').pnlPct], [1210, 107.8, 9.78]);
+    eq('Valor total = 6510', pf.value, 6510);
+    eq('Costo total = 5488.40', pf.cost, 5488.4);
+    eq('G/P total = 1021.60 (18.61 %)', [pf.pnl, pf.pnlPct], [1021.6, 18.61]);
+    eq('Pesos: BTC 53.76 %, AAPL 27.65 %, VWCE 18.59 %', pf.rows.map(function (x) { return x.weight; }), [53.76, 27.65, 18.59]);
+    eq('Cambio 24 h BTC (+2 %) = 3500 − 3500/1.02 = 68.63', pf.dayChange, 68.63);
+    eq('Por tipo: acción 1800 / cripto 3500 / ETF 1210', pf.byType.map(function (t) { return [t.assetType, t.value]; }).sort(),
+      [['accion', 1800], ['cripto', 3500], ['etf', 1210]]);
+    var noPrice = C.valuePortfolio(Pos.positions, { 'cripto|BTC': prices['cripto|BTC'] }, rates);
+    eq('Sin precio → se valora a costo (1381.20 + 3500 + 1102.20 = 5983.40), 2 sin precio', [noPrice.value, noPrice.unpriced], [5983.4, 2]);
+    eq('G/P % solo sobre activos con precio: 495/3005 = 16.47 %', noPrice.pnlPct, 16.47);
+
+    section('Patrimonio');
+    var nw = C.netWorth(state);
+    eq('En cuentas = 6212 + 465 + 497.75 + 150 = 7324.75', nw.cash, 7324.75);
+    eq('En inversiones = 6510', nw.invested, 6510);
+    eq('Patrimonio = 13834.75', nw.total, 13834.75);
+    // Saldos iniciales (10000+300+0+250) + neto 2164.95 + realizado 98.20 + no realizado 1021.60
+    eq('Consistencia: iniciales + neto + realizado + no realizado = patrimonio', C.round(10550 + s.net + pf.realized + pf.pnl), nw.total);
+
+    section('Análisis (Fase 3)');
+    eq('monthsBetween cruza el año', C.monthsBetween('2025-11-15', '2026-02-01'), ['2025-11', '2025-12', '2026-01', '2026-02']);
+    eq('Periodo anterior de 74 días: 19/05 – 31/07', C.previousPeriod('2026-08-01', '2026-10-13'), { from: '2026-05-19', to: '2026-07-31' });
+    eq('Misma duración: 73 días entre extremos en ambos', [C.daysBetween('2026-08-01', '2026-10-13'), C.daysBetween('2026-05-19', '2026-07-31')], [73, 73]);
+    eq('Mismo tramo del mes anterior: 1–13 oct → 1–13 sept', C.previousByMonths('2026-10-01', '2026-10-13', 1), { from: '2026-09-01', to: '2026-09-13' });
+    eq('Ajuste de fin de mes: 31/03 − 1 mes = 28/02', C.shiftMonths('2026-03-31', -1), '2026-02-28');
+    eq('Cruza el año: 15/01/2026 − 3 meses = 15/10/2025', C.shiftMonths('2026-01-15', -3), '2025-10-15');
+    eq('Serie diaria si ≤ 92 días (5 puntos)', C.seriesDates('2026-01-01', '2026-01-05').length, 5);
+    eq('Serie mensual si > 92 días (fin de mes + último día)', C.seriesDates('2026-01-15', '2026-06-10'),
+      ['2026-01-31', '2026-02-28', '2026-03-31', '2026-04-30', '2026-05-31', '2026-06-10']);
+    var atx = [
+      { type: 'egreso', date: '2026-07-10', amount: 300, currency: 'USD', accountId: 'A', categoryId: 'viv' },
+      { type: 'ingreso', date: '2026-08-05', amount: 1000, currency: 'USD', accountId: 'A', categoryId: 'sal' },
+      { type: 'egreso', date: '2026-08-20', amount: 400, currency: 'USD', accountId: 'A', categoryId: 'viv' },
+      { type: 'ingreso', date: '2026-09-01', amount: 1200, currency: 'USD', accountId: 'A', categoryId: 'sal' },
+      { type: 'egreso', date: '2026-09-03', amount: 100, currency: 'EUR', accountId: 'C', categoryId: 'com' },
+      { type: 'transferencia', date: '2026-09-10', amount: 50, currency: 'USD', fromAccountId: 'A', toAccountId: 'B', toAmount: 50, toCurrency: 'USD' }
+    ];
+    var arange = { from: '2026-08-01', to: '2026-10-13' };
+    var cf = C.monthlyCashflow(atx, rates, arange);
+    eq('Agosto: 1000 / 400 / neto 600 / ahorro 60 %', [cf[0].income, cf[0].expense, cf[0].net, cf[0].savingsRate], [1000, 400, 600, 60]);
+    eq('Septiembre: 1200 / 110 / neto 1090 / ahorro 90.83 %', [cf[1].income, cf[1].expense, cf[1].net, cf[1].savingsRate], [1200, 110, 1090, 90.83]);
+    eq('Octubre sin datos: 0 / 0 / ahorro null', [cf[2].income, cf[2].expense, cf[2].savingsRate], [0, 0, null]);
+    eq('Suma de meses = resumen del rango', C.sum(cf.map(function (m) { return m.net; })), C.summarizeTransactions(atx, rates, arange).net);
+    eq('Filtro categoría + cuenta: vivienda en A = 400', C.summarizeTransactions(atx, rates, { from: '2026-08-01', to: '2026-10-13', categoryId: 'viv', accountId: 'A' }).expense, 400);
+    var cb = C.categoryBreakdown(atx, rates, 'egreso', arange);
+    eq('Por categoría: total 510; vivienda 78.43 %, comida 21.57 %', [cb.total, cb.rows[0].share, cb.rows[1].share], [510, 78.43, 21.57]);
+    eq('Vivienda vs. anterior: (400 − 300)/300 = +33.33 %', [cb.rows[0].prev, cb.rows[0].change], [300, 33.33]);
+    eq('Comida sin periodo anterior → change null', cb.rows[1].change, null);
+
+    var series = C.netWorthSeries(state, ['2026-10-01', '2026-10-03', '2026-10-31'], { today: '2026-10-31' });
+    eq('01/10: cuentas 13550, sin inversiones', [series[0].cash, series[0].invested, series[0].total], [13550, 0, 13550]);
+    eq('03/10: cuentas 10598 + AAPL a costo 2302 = 12900', [series[1].cash, series[1].invested, series[1].total, series[1].source], [10598, 2302, 12900, 'costo']);
+    eq('03/10 cuadra: iniciales 10550 + ingresos 3550 − gastos 1200 = 12900', C.round(10550 + 3550 - 1200), series[1].total);
+    eq('Hoy: valor de mercado = patrimonio actual 13834.75', [series[2].total, series[2].source], [nw.total, 'mercado']);
+    eq('Filtro cuenta A el 03/10: 8198 y sin inversiones', (function () { var x = C.netWorthSeries(state, ['2026-10-03'], { accountId: 'A' })[0]; return [x.cash, x.invested]; })(), [8198, 0]);
+    eq('Filtro cripto hoy: inversiones = 3500', C.netWorthSeries(state, ['2026-10-31'], { today: '2026-10-31', assetType: 'cripto' })[0].invested, 3500);
+    var withSnap = Object.assign({}, state, { snapshots: { '2026-10-03': { cash: 10000, invested: 3000, total: 13000 } } });
+    eq('Registro diario reemplaza la reconstrucción', (function () { var x = C.netWorthSeries(withSnap, ['2026-10-03'], { today: '2026-10-31' })[0]; return [x.total, x.source]; })(), [13000, 'registro']);
+
+    section('Perfil y recomendaciones (Fase 4)');
+    var A = window.Advisor;
+    var all = function (v) { return { horizon: v, drop: v, goal: v, experience: v, income: v }; };
+    eq('Todo 1 → 5 puntos, conservador', A.scoreProfile(all(1)), { score: 5, type: 'conservador', cappedFrom: null });
+    eq('Todo 4 → 20 puntos, agresivo', A.scoreProfile(all(4)), { score: 20, type: 'agresivo', cappedFrom: null });
+    eq('3,3,3,2,2 → 13 puntos, moderado', A.scoreProfile({ horizon: 3, drop: 3, goal: 3, experience: 2, income: 2 }).type, 'moderado');
+    eq('Horizonte < 2 años limita a conservador', A.scoreProfile({ horizon: 1, drop: 4, goal: 4, experience: 4, income: 4 }), { score: 17, type: 'conservador', cappedFrom: 'agresivo' });
+    eq('Horizonte 2–5 años limita a moderado', A.scoreProfile({ horizon: 2, drop: 4, goal: 4, experience: 4, income: 4 }), { score: 18, type: 'moderado', cappedFrom: 'agresivo' });
+
+    var fmtUsd = function (v) { return 'USD ' + v.toFixed(2); };
+    var recs = A.recommend(state, { type: 'moderado' }, '2026-10-31', fmtUsd);
+    eq('Moderado: orden por prioridad', recs.map(function (r) { return r.id + ':' + r.severity; }),
+      ['cripto:alta', 'emergencia:media', 'concentracion:media', 'ahorro-ok:ok', 'riesgo-ok:ok']);
+    var byIdR = function (id, list) { return (list || recs).filter(function (r) { return r.id === id; })[0]; };
+    eq('Fondo de emergencia: 7324.75 ÷ 1385.05 = 5.3 meses; faltan 6 × 1385.05 − 7324.75 = 985.55',
+      [byIdR('emergencia').data.indexOf('= 5,3 meses') > -1, byIdR('emergencia').title.indexOf('985.55') > -1], [true, true]);
+    eq('Cripto: 3500 ÷ 13834.75 = 25.3 % (máx. moderado 5 %)', byIdR('cripto').data.indexOf('25,3 %') > -1, true);
+    eq('Riesgo: 6510 ÷ 13834.75 = 47.1 %, dentro de 35–65 %', byIdR('riesgo-ok').data.indexOf('47,1 %') > -1, true);
+    eq('Concentración: BTC 53.8 % del portafolio', byIdR('concentracion').title, 'BTC concentra el 53,8 % de tu portafolio');
+    eq('Cada recomendación tiene por qué y datos', recs.every(function (r) { return r.why.length > 20 && r.data.length > 10; }), true);
+
+    var recsC = A.recommend(state, { type: 'conservador' }, '2026-10-31', fmtUsd);
+    eq('Conservador: riesgo 47.1 % > 35 % → atención', byIdR('riesgo-alto', recsC).severity, 'media');
+    eq('Conservador: objetivo de emergencia 9 meses', byIdR('emergencia', recsC).data.indexOf('Objetivo: 9 meses') > -1, true);
+
+    // Categoría que crece: Ocio 100 → 200 al mes (abr–jun vs. jul–sep)
+    var g = { settings: { rates: rates }, accounts: [{ id: 'A', currency: 'USD', initialBalance: 0 }], investments: [], prices: {},
+      categories: [{ id: 'oci', name: 'Ocio', type: 'egreso' }, { id: 'com', name: 'Comida', type: 'egreso' }], transactions: [] };
+    ['04', '05', '06', '07', '08', '09'].forEach(function (m, i) {
+      g.transactions.push({ type: 'ingreso', date: '2026-' + m + '-01', amount: 1000, currency: 'USD', accountId: 'A', categoryId: 'sal' });
+      g.transactions.push({ type: 'egreso', date: '2026-' + m + '-10', amount: i < 3 ? 100 : 200, currency: 'USD', accountId: 'A', categoryId: 'oci' });
+      g.transactions.push({ type: 'egreso', date: '2026-' + m + '-12', amount: i < 3 ? 300 : 310, currency: 'USD', accountId: 'A', categoryId: 'com' });
+    });
+    var gr = A.recommend(g, { type: 'moderado' }, '2026-10-15', fmtUsd);
+    eq('Ocio subió 100 % (100 → 200 al mes) y se detecta', byIdR('gasto-oci', gr) && byIdR('gasto-oci', gr).title, 'Tu gasto en Ocio subió 100 %');
+    eq('Comida +3.3 % no se marca', !!byIdR('gasto-com', gr), false);
+    // Si se empezó a registrar en mayo, abril (sin datos) no cuenta: 100/mes en may–jun vs. 100/mes en jul–sep → sin alerta
+    var g2 = JSON.parse(JSON.stringify(g));
+    g2.transactions = g2.transactions.filter(function (t) { return t.date.slice(5, 7) !== '04'; })
+      .map(function (t) { if (t.categoryId === 'oci') t.amount = 100; return t; });
+    eq('Mes sin datos no infla la comparación (sin falsa subida)', !!byIdR('gasto-oci', A.recommend(g2, { type: 'moderado' }, '2026-10-15', fmtUsd)), false);
+    eq('Promedio jul–sep: ingreso 1000, gasto 510, ahorro 49 %', (function () { var m = A.monthlyAverages(g, '2026-10-15', 3); return [m.income, m.expense, m.savingsRate]; })(), [1000, 510, 49]);
+
+    eq('Estadísticas 30 d: [100,110,99,120] → +20 %, vol 15.81 %, caída −10 %', C.priceStats([100, 110, 99, 120]), { ret30: 20, vol30: 15.81, maxDrawdown: -10 });
+
+    section('Ficha de activo: historial y operaciones en el gráfico');
+    var NOW = Date.parse('2026-10-13T12:00:00Z'), DAY = 86400000;
+    eq('Rango 1 M → velas de 4 h, 180 puntos', C.klinePlan('1M', NOW), { interval: '4h', limit: 180 });
+    eq('Rango 1 A → velas diarias, 365 puntos', C.klinePlan('1A', NOW), { interval: '1d', limit: 365 });
+    eq('Mis operaciones (1.ª hace 30 días) → desde 7 días antes, velas de 4 h: 37×6 + 2 = 224',
+      C.klinePlan('mis', NOW, NOW - 30 * DAY), { interval: '4h', limit: 224, startTime: NOW - 37 * DAY });
+    eq('Mis operaciones (1.ª hace 400 días) → velas diarias: 407 + 2 = 409', (function () { var p = C.klinePlan('mis', NOW, NOW - 400 * DAY); return [p.interval, p.limit]; })(), ['1d', 409]);
+    eq('Mis operaciones (1.ª hace 5 años) → semanales, máx. 1000', (function () { var p = C.klinePlan('mis', NOW, NOW - 1825 * DAY); return [p.interval, p.limit <= 1000]; })(), ['1w', true]);
+    var mAapl = C.opMarkers(inv, 'accion', 'aapl', rates, 'USD');
+    eq('AAPL: 2 compras y 1 venta, en orden, a su precio', mAapl.map(function (m) { return m.kind + '@' + m.y; }), ['compra@150', 'compra@160', 'venta@170']);
+    eq('Marcas el día de la operación', new Date(mAapl[0].t).getDate(), 2);
+    var mV = C.opMarkers(inv, 'etf', 'VWCE', rates, 'USD');
+    eq('VWCE comprado a 100 EUR → 110 USD en el gráfico (convertido)', [mV[0].y, mV[0].converted], [110, true]);
+    eq('USDT cuenta como USD (sin conversión)', C.opMarkers([{ assetType: 'cripto', ticker: 'ETH', side: 'compra', price: 2500, currency: 'USDT', date: '2026-10-01' }], 'cripto', 'ETH', rates, 'USD')[0].converted, false);
+    eq('Otros activos no aparecen', C.opMarkers(inv, 'cripto', 'ETH', rates, 'USD').length, 0);
+
+    section('Cambios de divisas y cuentas por cobrar/pagar');
+    var fxRates = { USD: 1, USDT: 1, EUR: 1.10 };
+    var q1 = C.exchangeQuote({ amount: 1000, inCurrency: 'USD', outCurrency: 'USDT', rate: 1, commission: { mode: 'porcentaje', value: 3, charge: 'descontada' } }, fxRates);
+    eq('3 % descontada: comisión 30; recibes 1000; entregas (1000 − 30) × 1 = 970', [q1.commission, q1.received, q1.delivered], [30, 1000, 970]);
+    var q2 = C.exchangeQuote({ amount: 1000, inCurrency: 'USD', outCurrency: 'USDT', rate: 1, commission: { mode: 'porcentaje', value: 3, charge: 'aparte' } }, fxRates);
+    eq('3 % aparte: recibes 1030; entregas 1000', [q2.received, q2.delivered], [1030, 1000]);
+    var q3 = C.exchangeQuote({ amount: 1000, inCurrency: 'USD', outCurrency: 'EUR', rate: 0.9, commission: { mode: 'fijo', value: 15, currency: 'USD', charge: 'descontada' } }, fxRates);
+    eq('Fijo 15 $ a EUR (tasa 0.9): entregas (1000 − 15) × 0.9 = 886.50 EUR', [q3.commission, q3.delivered], [15, 886.5]);
+    var q4 = C.exchangeQuote({ amount: 500, inCurrency: 'EUR', outCurrency: 'USD', rate: 1.1, commission: { mode: 'fijo', value: 10, currency: 'USD', charge: 'descontada' } }, fxRates);
+    eq('Fijo 10 $ cobrado sobre euros: 10 ÷ 1.10 = 9.09 EUR', q4.commission, 9.09);
+
+    var snapUsd = { base: 'USD', rates: fxRates };
+    var x1 = { id: 'x1', date: '2026-10-05', client: 'Ana', status: 'completada', amount: 1000, inCurrency: 'USD', outCurrency: 'USDT', rate: 1,
+      received: 1000, delivered: 970, commissionAmount: 30, inAccountId: 'BU', outAccountId: 'BN', snapshot: snapUsd,
+      costs: [{ concept: 'Comisión bancaria', amount: 2, currency: 'USD', accountId: 'BU' }] };
+    var p1 = C.exchangeProfit(x1, fxRates);
+    eq('Ganancia = 1000 − 970 − 2 de costos = 28 (comisión 30, diferencial 0)', [p1.profit, p1.commission, p1.costs, p1.spread], [28, 30, 2, 0]);
+    var x3 = Object.assign({}, x1, { outCurrency: 'EUR', rate: 0.9, delivered: 886.5, commissionAmount: 15, costs: [] });
+    var p3 = C.exchangeProfit(x3, fxRates);
+    eq('USD→EUR a 0.9 (mercado 0.909): ganancia 1000 − 975.15 = 24.85 = comisión 15 + diferencial 9.85', [p3.profit, p3.spread], [24.85, 9.85]);
+    eq('La ganancia queda fija aunque cambien las tasas después', C.exchangeProfit(x3, { USD: 1, EUR: 1.30, USDT: 1 }).profit, 24.85);
+    eq('Si cambias la moneda base, se convierte (base EUR a 1.10)', C.exchangeProfit(x1, { USD: 0.9090909091, EUR: 1, USDT: 0.9090909091 }).profit, 25.45);
+
+    var x2 = { id: 'x2', date: '2026-10-08', client: 'Luis', status: 'pendiente_entrega', amount: 500, inCurrency: 'USD', outCurrency: 'USDT', rate: 1,
+      received: 500, delivered: 500, commissionAmount: 0, inAccountId: 'BU', outAccountId: 'BN', snapshot: snapUsd, costs: [] };
+    var tps = {
+      settings: { rates: fxRates, baseCurrency: 'USD' }, prices: {}, investments: [], transactions: [],
+      accounts: [{ id: 'BU', currency: 'USD', initialBalance: 0 }, { id: 'BN', currency: 'USDT', initialBalance: 0 }, { id: 'EF', currency: 'USD', initialBalance: 0 }],
+      exchanges: [x1, x2],
+      debts: [
+        { id: 'd1', kind: 'cobrar', person: 'Pedro', concept: 'Préstamo', amount: 500, currency: 'USD', date: '2026-10-01', dueDate: '2026-10-10', accountId: 'EF',
+          payments: [{ id: 'p1', date: '2026-10-06', amount: 200, accountId: 'EF' }] },
+        { id: 'd2', kind: 'pagar', person: 'Proveedor', concept: 'Compra a crédito', amount: 1000, currency: 'EUR', date: '2026-10-02', dueDate: '2026-10-20', accountId: null,
+          payments: [{ id: 'p2', date: '2026-10-07', amount: 400, accountId: null }] }
+      ]
+    };
+    var tb = C.accountBalances(tps);
+    eq('Banco USD: +1000 recibido − 2 costo + 500 (cambio pendiente de entregar, ya recibido) = 1498', tb[0].balance, 1498);
+    eq('Binance USDT: −970 entregado (lo pendiente aún no sale)', tb[1].balance, -970);
+    eq('Efectivo: −500 prestado + 200 cobrado = −300', tb[2].balance, -300);
+    eq('Préstamo a Pedro: abonado 200, pendiente 300, parcial', C.debtBalance(tps.debts[0]), { paid: 200, pending: 300, status: 'parcial' });
+    var tpr = C.thirdParty(tps, '2026-10-13');
+    eq('Por cobrar: 300 USD, vencido el 10/10', [tpr.receivableBase, tpr.receivables[0].overdue, tpr.receivables[0].daysToDue], [300, true, -3]);
+    eq('Por pagar: 600 EUR (660 USD) + 500 USDT del cambio pendiente = 1160', [tpr.payableBase, tpr.payables.length, tpr.payables[1].source], [1160, 2, 'cambio']);
+    var tnw = C.netWorth(tps, '2026-10-13');
+    eq('Patrimonio = cuentas 228 + te deben 300 − debes 1160 = −632', [tnw.cash, tnw.total], [228, -632]);
+    eq('Cuadra: ganancia del cambio 28 − deuda neta 660 (préstamo y cambio pendiente son neutros) = −632', C.round(28 - 660), tnw.total);
+    var flows = C.flowTransactions(tps);
+    eq('Ingresos por cambios: solo los completados (28)', flows.filter(function (t) { return t.synthetic; }).map(function (t) { return [t.type, t.amount, t.categoryId]; }), [['ingreso', 28, '__cambios']]);
+    eq('Serie del patrimonio al 06/10 incluye terceros', (function () { var r = C.netWorthSeries(tps, ['2026-10-06'], {})[0]; return [r.cash, r.terceros, r.total]; })(), [-272, -800, -1072]);
+
+    section('Paridad USD = USDT (corrección de ganancias en cambios)');
+    var badUsdt = { USD: 1, USDT: 0.97, EUR: 1.12 };          // USDT guardado con una tasa incorrecta
+    eq('100 USDT = 100 USD aunque la tabla diga 0.97', C.toBase(100, 'USDT', badUsdt), 100);
+    eq('Convertir USD↔USDT es 1:1', [C.convert(250, 'USD', 'USDT', badUsdt), C.marketRate('USDT', 'USD', badUsdt)], [250, 1]);
+    var qq = C.exchangeQuote({ amount: 1000, inCurrency: 'USD', outCurrency: 'USDT', rate: 1, commission: { mode: 'porcentaje', value: 3, charge: 'descontada' } }, badUsdt);
+    var pp = C.exchangeProfit({ received: qq.received, delivered: qq.delivered, commissionAmount: qq.commission, inCurrency: 'USD', outCurrency: 'USDT', costs: [],
+      snapshot: { base: 'USD', rates: badUsdt } }, badUsdt);
+    eq('USD→USDT al 3 %: ganancia = comisión = 30, diferencial 0 (antes daba 59.10)', [pp.profit, pp.spread], [30, 0]);
+    var baseEur = { EUR: 1, USD: 0.8929, USDT: 1 };            // base EUR con USDT mal fijado en 1
+    var pe = C.exchangeProfit({ received: 1000, delivered: 970, commissionAmount: 30, inCurrency: 'USD', outCurrency: 'USDT', costs: [], snapshot: { base: 'EUR', rates: baseEur } }, baseEur);
+    eq('Base EUR: ganancia = 30 USD ≈ 26.79 EUR, sin diferencial (antes −67.13)', [pe.profit, pe.spread], [26.79, 0]);
+    var pa = C.exchangeQuote({ amount: 500, inCurrency: 'USDT', outCurrency: 'USD', rate: 1, commission: { mode: 'porcentaje', value: 2, charge: 'aparte' } }, badUsdt);
+    eq('USDT→USD 2 % aparte: envía 510, recibe 500 (ganancia 10)', [pa.received, pa.delivered], [510, 500]);
+    eq('Tasa de mercado EUR→USD = 1.12 y USD→EUR = 0.89285714', [C.marketRate('EUR', 'USD', badUsdt), C.marketRate('USD', 'EUR', badUsdt)], [1.12, 0.89285714]);
+    eq('USDT→EUR usa la tasa del USD (1 ÷ 1.12)', C.marketRate('USDT', 'EUR', badUsdt), 0.89285714);
+
+    section('Activos por cuenta (custodia)');
+    var hA = C.accountHoldings(state, 'A');
+    eq('Banco: saldo 6212 + AAPL 1800 + BTC 3500 = 11512', [hA.cash, hA.portfolio.value, hA.total], [6212, 5300, 11512]);
+    eq('Banco: activos AAPL y BTC (VWCE está en la cuenta en euros)', hA.portfolio.rows.map(function (r) { return r.position.ticker; }).sort(), ['AAPL', 'BTC']);
+    var hC = C.accountHoldings(state, 'C');
+    eq('Cuenta en euros: 452.50 EUR (497.75 USD) + VWCE 1210 = 1707.75', [hC.cash, hC.cashBase, hC.total], [452.5, 497.75, 1707.75]);
+    var moved = JSON.parse(JSON.stringify(state));
+    moved.investments.forEach(function (o) { if (o.ticker === 'BTC') o.custodyAccountId = 'B'; }); // BTC pagado desde el banco pero guardado en otra cuenta
+    eq('Custodia: BTC pagado desde el banco y guardado en Efectivo', [C.accountHoldings(moved, 'A').portfolio.value, C.accountHoldings(moved, 'B').portfolio.value], [1800, 3500]);
+    eq('El saldo del banco no cambia por la custodia (se pagó desde ahí)', C.accountHoldings(moved, 'A').cash, 6212);
+    eq('Suma de cuentas + activos = patrimonio sin terceros', C.round(['A', 'B', 'C', 'D'].reduce(function (s, id) { return s + C.accountHoldings(state, id).total; }, 0)), nw.total);
+
+    section('Sincronización: marcas de cambio y combinación');
+    var st0 = { accounts: [{ id: 'a', name: 'Banco' }], categories: [], methods: [], transactions: [], investments: [], debts: [], exchanges: [], settings: { baseCurrency: 'USD' }, profile: null };
+    var h0 = Store.stamp(st0, null, 100);
+    eq('Primera carga: no marca cambios (_u = 1)', st0.accounts[0]._u, 1);
+    st0.accounts[0].name = 'Banco nuevo';
+    var h1 = Store.stamp(st0, h0, 200);
+    eq('Al editar, el registro recibe la hora del cambio', st0.accounts[0]._u, 200);
+    var h2 = Store.stamp(st0, h1, 250);
+    eq('Guardar sin cambios no toca la marca', st0.accounts[0]._u, 200);
+    st0.accounts = [];
+    Store.stamp(st0, h2, 300);
+    eq('Al borrar, queda una lápida con la hora', st0.deleted, { a: 300 });
+
+    var now0 = Date.now();
+    var L = { accounts: [], categories: [], methods: [], investments: [], debts: [], exchanges: [], settings: { _u: now0 - 10, baseCurrency: 'USD' }, profile: null,
+      transactions: [{ id: 't1', amount: 10, _u: now0 - 900 }, { id: 't2', amount: 5, _u: now0 - 950 }, { id: 't4', amount: 7, _u: now0 - 100 }],
+      prices: { 'cripto|BTC': { price: 1, lastAttempt: 5 } }, snapshots: {}, assetMeta: {}, deleted: {} };
+    var R = { accounts: [], categories: [], methods: [], investments: [], debts: [], exchanges: [], settings: { _u: now0 - 20, baseCurrency: 'EUR' }, profile: { type: 'moderado', _u: 3 },
+      transactions: [{ id: 't1', amount: 20, _u: now0 - 800 }, { id: 't3', amount: 3, _u: now0 - 850 }],
+      prices: { 'cripto|BTC': { price: 2, lastAttempt: 9 } }, snapshots: { '2026-10-01': { total: 1, at: 1 } }, assetMeta: {},
+      deleted: { t2: now0 - 880, t4: now0 - 200 } };
+    var M = Sync.merge(L, R);
+    eq('Gana la edición más reciente (t1 = 20 del otro dispositivo)', M.transactions.filter(function (t) { return t.id === 't1'; })[0].amount, 20);
+    eq('Un borrado en el otro dispositivo elimina t2 aquí', M.transactions.some(function (t) { return t.id === 't2'; }), false);
+    eq('Lo editado después del borrado se conserva (t4)', M.transactions.some(function (t) { return t.id === 't4'; }), true);
+    eq('Lo nuevo del otro dispositivo llega (t3), tras los locales', M.transactions.map(function (t) { return t.id; }), ['t1', 't4', 't3']);
+    eq('Ajustes: gana el más reciente; perfil y fotos diarias se suman', [M.settings.baseCurrency, M.profile.type, !!M.snapshots['2026-10-01']], ['USD', 'moderado', true]);
+    eq('Precios: el más reciente por activo', M.prices['cripto|BTC'].price, 2);
+    eq('Combinar es estable: combinar el resultado con lo remoto no cambia nada', JSON.stringify(Sync.merge(M, R).transactions), JSON.stringify(M.transactions));
+    eq('Un dispositivo recién instalado se detecta como «sin datos»', [Sync.isPristine(Store.defaults()), Sync.isPristine(L)], [true, false]);
+
+    section('Migración de datos v1 → v2');
+    var v1 = { version: 1, settings: { baseCurrency: 'USD', rates: { USD: 1, EUR: 1.1 } }, categories: [], methods: [],
+      transactions: [{ id: 't1', type: 'ingreso', amount: 10, currency: 'USD', date: '2026-01-01' }, { id: 't2', type: 'egreso', amount: 5, currency: 'EUR', date: '2026-01-02' }],
+      investments: [] };
+    var v2 = Store.normalize(JSON.parse(JSON.stringify(v1)));
+    eq('Se crea una cuenta por moneda usada', v2.accounts.map(function (a) { return a.currency; }), ['USD', 'EUR']);
+    eq('Cada movimiento queda asignado a su cuenta', v2.transactions.every(function (t) { return !!t.accountId; }), true);
+    eq('Versión 2 con precios vacíos', [v2.version, JSON.stringify(v2.prices)], [2, '{}']);
+
+    var el = document.getElementById('summary');
+    var done = function () {
+      el.textContent = pass + ' pruebas OK, ' + fail + ' fallidas';
+      el.className = fail ? 'fail' : 'ok';
+      window.__testResult = { pass: pass, fail: fail };
+    };
+    done();
+
+    // Cifrado (asíncrono): ida y vuelta, y contraseña incorrecta
+    (async function () {
+      section('Cifrado de extremo a extremo');
+      var K = Sync._crypto, salt = btoa('sal-de-prueba-16');
+      var key = await K.deriveKey('mi clave segura', salt);
+      var secret = { cuentas: [{ nombre: 'Binance', saldo: 1234.56 }], nota: 'ñandú €' };
+      var box = await K.encrypt(secret, key);
+      eq('El texto cifrado no contiene los datos', box.data.indexOf('Binance') === -1 && atob(box.data).indexOf('Binance') === -1, true);
+      eq('Se descifra igual con la misma contraseña', await K.decrypt(box, key), secret);
+      var wrong = await K.deriveKey('otra clave', salt), failed = false;
+      try { await K.decrypt(box, wrong); } catch (e) { failed = true; }
+      eq('Con otra contraseña no se puede descifrar', failed, true);
+      var box2 = await K.encrypt(secret, key);
+      eq('Cada cifrado usa un IV distinto', box.iv !== box2.iv, true);
+      done();
+    })();
+  })();
+  </script>
+</body>
+</html>
