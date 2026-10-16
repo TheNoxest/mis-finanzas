@@ -13,6 +13,17 @@
   <meta name="apple-mobile-web-app-title" content="Mis Finanzas">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <link rel="stylesheet" href="css/styles.css">
+  <script>
+    // Apariencia elegida en este dispositivo: se aplica antes de pintar para que no parpadee
+    (function () {
+      try {
+        var p = JSON.parse(localStorage.getItem('misFinanzas.ui')) || {}, r = document.documentElement;
+        if (p.theme === 'light' || p.theme === 'dark') r.setAttribute('data-theme', p.theme);
+        if (p.accent && p.accent !== 'azul') r.setAttribute('data-accent', p.accent);
+        if (p.font && p.font !== 'm') r.setAttribute('data-font', p.font);
+      } catch (e) { /* sin almacenamiento: apariencia por defecto */ }
+    })();
+  </script>
 </head>
 <body>
   <!-- Iconos reutilizables -->
@@ -41,6 +52,9 @@
     <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
     <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></symbol>
     <symbol id="i-dot" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/></symbol>
+    <symbol id="i-doc" viewBox="0 0 24 24"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8zM14 3v5h5M9 13h6M9 17h6M9 9h2"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M4 20l1.4-4.2A8 8 0 1 1 8.5 19z"/><path d="M9 10.5c.3 1.8 1.7 3.2 3.5 3.6"/></symbol>
+    <symbol id="i-share" viewBox="0 0 24 24"><path d="M12 15V3M8 7l4-4 4 4M5 12v7a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-7"/></symbol>
   </svg>
 
   <header class="topbar">
@@ -238,6 +252,10 @@
             <h2 id="pay-title">Abonos</h2>
             <button type="button" class="pay-edit hidden" id="pay-edit"><svg class="ic"><use href="#i-edit"/></svg><span>Editar</span></button>
           </div>
+          <div class="pay-tools hidden" id="pay-tools">
+            <button type="button" data-action="rcpt-open" id="pay-rcpt"><svg class="ic"><use href="#i-doc"/></svg>Comprobante</button>
+            <button type="button" class="wa-btn" data-action="wa-remind" id="pay-remind"><svg class="ic"><use href="#i-chat"/></svg>Recordar por WhatsApp</button>
+          </div>
           <div class="progress" id="pay-progress"></div>
           <ul class="list" id="pay-list"></ul>
           <form class="grid pay-form" id="pay-form" autocomplete="off" novalidate>
@@ -250,7 +268,7 @@
         </div>
 
         <form id="debt-form" class="card form" autocomplete="off" novalidate>
-          <h2 id="debt-form-title">Nueva cuenta por cobrar</h2>
+          <div class="card-head form-head"><h2 id="debt-form-title">Nueva cuenta por cobrar</h2><button type="button" class="pay-edit hidden" data-action="rcpt-form" data-kind="debt"><svg class="ic"><use href="#i-doc"/></svg><span>Comprobante</span></button></div>
           <div class="grid">
             <label class="span2"><span id="debt-person-label">¿Quién te debe?</span><input name="person" data-people autocomplete="off" maxlength="60" placeholder="Nombre" required></label>
             <label class="span2">Concepto<input name="concept" maxlength="80" placeholder="Ej.: préstamo, venta, servicio"></label>
@@ -280,7 +298,7 @@
         </div>
 
         <form id="fx-form" class="card form" autocomplete="off" novalidate>
-          <h2 id="fx-form-title">Nuevo cambio</h2>
+          <div class="card-head form-head"><h2 id="fx-form-title">Nuevo cambio</h2><button type="button" class="pay-edit hidden" data-action="rcpt-form" data-kind="fx"><svg class="ic"><use href="#i-doc"/></svg><span>Comprobante</span></button></div>
           <p class="warning hidden" id="fx-settle-hint"></p>
           <div class="grid">
             <label class="span2">Cliente<input name="client" data-people autocomplete="off" maxlength="60" placeholder="Nombre del cliente"></label>
@@ -364,7 +382,7 @@
         <div data-pay-anchor></div>
 
         <form id="sale-form" class="card form" autocomplete="off" novalidate>
-          <h2 id="sale-form-title">Nueva venta</h2>
+          <div class="card-head form-head"><h2 id="sale-form-title">Nueva venta</h2><button type="button" class="pay-edit hidden" data-action="rcpt-form" data-kind="sale"><svg class="ic"><use href="#i-doc"/></svg><span>Comprobante</span></button></div>
           <div class="seg" role="radiogroup" aria-label="Forma de pago">
             <input type="radio" name="mode" id="sm-contado" value="contado" checked><label for="sm-contado">De contado</label>
             <input type="radio" name="mode" id="sm-credito" value="credito"><label for="sm-credito">Por cobrar</label>
@@ -456,7 +474,7 @@
         </div>
 
         <form id="loan-form" class="card form" autocomplete="off" novalidate>
-          <h2 id="loan-form-title">Nuevo préstamo</h2>
+          <div class="card-head form-head"><h2 id="loan-form-title">Nuevo préstamo</h2><button type="button" class="pay-edit hidden" data-action="rcpt-form" data-kind="loan"><svg class="ic"><use href="#i-doc"/></svg><span>Comprobante</span></button></div>
           <p class="hint hidden" id="loan-edit-hint"></p>
           <div class="seg" role="radiogroup" aria-label="Tipo de préstamo">
             <input type="radio" name="kind" id="lk-otorgado" value="otorgado" checked><label for="lk-otorgado">Presté dinero</label>
@@ -810,6 +828,49 @@
           En el móvil: desliza un movimiento ← para borrarlo (con «Deshacer») o → para editarlo; arrastra hacia abajo desde arriba para sincronizar y actualizar precios.</p>
       </div>
 
+      <div class="card" id="look-card">
+        <h2>Apariencia</h2>
+        <p class="hint" style="margin-top:0">Se guarda en este dispositivo.</p>
+        <div class="look-row"><span class="look-label">Tema</span>
+          <div class="seg seg-3" role="radiogroup" aria-label="Tema">
+            <input type="radio" name="look-theme" id="lt-auto" value="auto"><label for="lt-auto">Automático</label>
+            <input type="radio" name="look-theme" id="lt-light" value="light"><label for="lt-light">Claro</label>
+            <input type="radio" name="look-theme" id="lt-dark" value="dark"><label for="lt-dark">Oscuro</label>
+          </div>
+        </div>
+        <div class="look-row"><span class="look-label">Color</span>
+          <div class="swatches" role="radiogroup" aria-label="Color de acento">
+            <label class="swatch" style="--sw:#256abf"><input type="radio" name="look-accent" value="azul"><span class="dot"></span>Azul</label>
+            <label class="swatch" style="--sw:#0f7a5c"><input type="radio" name="look-accent" value="verde"><span class="dot"></span>Verde</label>
+            <label class="swatch" style="--sw:#6a4bc4"><input type="radio" name="look-accent" value="morado"><span class="dot"></span>Morado</label>
+            <label class="swatch" style="--sw:#b4531c"><input type="radio" name="look-accent" value="naranja"><span class="dot"></span>Naranja</label>
+            <label class="swatch" style="--sw:#b8336a"><input type="radio" name="look-accent" value="rosa"><span class="dot"></span>Rosa</label>
+            <label class="swatch" style="--sw:#3a3a38"><input type="radio" name="look-accent" value="grafito"><span class="dot"></span>Grafito</label>
+          </div>
+        </div>
+        <div class="look-row"><span class="look-label">Tamaño de letra</span>
+          <div class="seg seg-4" role="radiogroup" aria-label="Tamaño de letra">
+            <input type="radio" name="look-font" id="lf-s" value="s"><label for="lf-s" style="font-size:.8rem">Pequeña</label>
+            <input type="radio" name="look-font" id="lf-m" value="m"><label for="lf-m">Normal</label>
+            <input type="radio" name="look-font" id="lf-l" value="l"><label for="lf-l" style="font-size:.98rem">Grande</label>
+            <input type="radio" name="look-font" id="lf-xl" value="xl"><label for="lf-xl" style="font-size:1.05rem">Enorme</label>
+          </div>
+        </div>
+      </div>
+
+      <form class="card" id="rcpt-settings" autocomplete="off" novalidate>
+        <h2>Comprobantes y WhatsApp</h2>
+        <p class="hint" style="margin-top:0">Estos datos aparecen en los comprobantes y mensajes que envías a tus clientes (se sincronizan).</p>
+        <div class="grid">
+          <label class="span2">Nombre del negocio<input name="bizName" maxlength="60" placeholder="Ej.: Cambios Express"></label>
+          <label>Teléfono<input name="phone" type="tel" inputmode="tel" maxlength="30" placeholder="+58 412 555 1234"></label>
+          <label>Código de país<input name="countryCode" inputmode="numeric" maxlength="4" placeholder="Ej.: 58"></label>
+          <label class="span2">Pie del comprobante<input name="footer" maxlength="120" placeholder="Ej.: ¡Gracias por tu confianza!"></label>
+        </div>
+        <p class="hint">El código de país se añade a los teléfonos de clientes escritos sin «+» (0412 555 1234 → +58 412 555 1234).
+          Los comprobantes salen en PDF o imagen desde la tarjeta de cobros, el formulario de cada operación o el aviso al guardar.</p>
+      </form>
+
       <div class="card" id="versions-card">
         <h2>Copias y versiones</h2>
         <p class="hint" style="margin-top:0">La app guarda copias automáticas para que puedas volver atrás si algo sale mal: en este dispositivo
@@ -971,6 +1032,22 @@
     </form>
   </dialog>
 
+  <!-- Comprobante -->
+  <dialog id="receipt-dialog" class="receipt-dialog" aria-labelledby="rcpt-title">
+    <div class="card-head"><h2 id="rcpt-title">Comprobante</h2>
+      <button type="button" class="mini" data-action="rcpt-close" aria-label="Cerrar"><svg class="ic"><use href="#i-x"/></svg></button></div>
+    <div class="rcpt-preview"><img id="rcpt-img" alt="Vista previa del comprobante"></div>
+    <label class="rcpt-phone"><span>WhatsApp del cliente <span class="muted">(opcional)</span></span>
+      <input id="rcpt-phone" type="tel" inputmode="tel" autocomplete="off" maxlength="30" placeholder="+58 412 555 1234"></label>
+    <div class="rcpt-actions">
+      <button type="button" class="primary wa-btn" data-action="rcpt-wa"><svg class="ic"><use href="#i-chat"/></svg>Enviar por WhatsApp</button>
+      <button type="button" data-action="rcpt-pdf"><svg class="ic"><use href="#i-share"/></svg><span data-share>Compartir</span> PDF</button>
+      <button type="button" data-action="rcpt-img"><svg class="ic"><use href="#i-share"/></svg><span data-share>Compartir</span> imagen</button>
+      <button type="button" class="ghost" data-action="rcpt-copy">Copiar texto</button>
+    </div>
+    <p class="hint" id="rcpt-hint"></p>
+  </dialog>
+
   <div class="tooltip" id="tooltip" role="tooltip"></div>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
@@ -1011,6 +1088,7 @@
   <script src="js/voice.js"></script>
   <script src="js/backups.js"></script>
   <script src="js/sync.js"></script>
+  <script src="js/receipt.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

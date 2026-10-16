@@ -23,6 +23,7 @@
   <script src="../js/sync.js"></script>
   <script src="../js/voice.js"></script>
   <script src="../js/insights.js"></script>
+  <script src="../js/receipt.js"></script>
   <script>
   (function () {
     var out = document.getElementById('out'), pass = 0, fail = 0, ol;
@@ -630,6 +631,76 @@
       Insights.ideas({ rows: [{ position: { ticker: 'BTC' } }], byType: [{ assetType: 'cripto', weight: 100 }] }, 'moderado').map(function (i) { return i.id; }), ['cripto', 'bonos', 'indices']);
     eq('Sin inversiones y conservador → empezar con BND, SHY, VT',
       Insights.ideas({ rows: [], byType: [] }, 'conservador')[0].items.map(function (i) { return i.ticker; }), ['BND', 'SHY', 'VT']);
+
+    section('Comprobantes y WhatsApp');
+    var R = window.Receipt, rctx = { locale: 'en-US', today: '2026-10-20', business: { name: 'Cambios Express', footer: '¡Gracias!' } };
+    eq('Número estable: prefijo + AAMMDD + 4 del id', R.number('CAM', '2026-10-16', 'ab12cd34-ffff'), 'CAM-261016-AB12');
+    eq('Teléfono con +: solo dígitos', R.normalizePhone('+58 412-555-1234', ''), '584125551234');
+    eq('Teléfono local con 0 + código de país 58', R.normalizePhone('0412 5551234', '58'), '584125551234');
+    eq('Teléfono con 00 internacional ignora el código por defecto', R.normalizePhone('0058 412 5551234', '57'), '584125551234');
+    eq('Ya trae el código de país (sin +): no se repite', R.normalizePhone('58 412 555 1234', '58'), '584125551234');
+    eq('EE. UU. sin + con código 1', R.normalizePhone('(305) 555-1234', '1'), '13055551234');
+    eq('Enlace de WhatsApp con el texto codificado', R.waUrl('584125551234', 'Hola *Ana*\nTotal'), 'https://wa.me/584125551234?text=Hola%20*Ana*%0ATotal');
+
+    var rx = { id: 'x1aa', date: '2026-10-16', client: 'Ana', amount: 100, inCurrency: 'USD', outCurrency: 'USDT', rate: 1,
+      commission: { mode: 'porcentaje', value: 3, charge: 'descontada' }, commissionAmount: 3, received: 100, delivered: 97, status: 'completada' };
+    var mx = R.exchangeModel(rx, rctx);
+    eq('Cambio 100 USD al 3 % descontado: entrega 100, comisión 3, tasa 1:1, recibe 97 USDT',
+      mx.rows.map(function (r) { return r.label + ': ' + r.value; }),
+      ['El cliente entrega: $100.00', 'Comisión 3 % (descontada): $3.00', 'Tasa: 1 USD = 1 USDT', 'El cliente recibe: 97.00 USDT']);
+    eq('Cambio completado: número y estado', [mx.number, mx.status, mx.business], ['CAM-261016-X1AA', 'Completado', 'Cambios Express']);
+    var txt = R.text(mx).split('\n');
+    eq('Texto para WhatsApp: negocio en negrita, número/fecha, cliente y total en negrita',
+      [txt[0], txt[2], txt[3], txt[8], txt[txt.length - 1]],
+      ['*Cambios Express*', 'N.º CAM-261016-X1AA · 16/10/2026', 'Cliente: Ana', 'El cliente recibe: *97.00 USDT*', '¡Gracias!']);
+
+    var rx2 = Object.assign({}, rx, { id: 'x2bb', status: 'pendiente_entrega', settlements: [{ id: 's1zz', date: '2026-10-17', amount: 40 }] });
+    eq('Cambio por entregar 97, entregado 40 → pendiente 57', R.exchangeModel(rx2, rctx).status, 'Pendiente de entrega: 57.00 USDT (ya entregado 40.00 USDT)');
+    var mpx = R.paymentModel('fx', rx2, rx2.settlements[0], rctx);
+    eq('Recibo de la entrega de 40: título, monto, saldo 57 y número',
+      [mpx.title, mpx.rows[1].value, mpx.rows[2].value, mpx.status, mpx.number],
+      ['Comprobante de entrega del cambio', '40.00 USDT', '57.00 USDT', 'Queda pendiente 57.00 USDT', 'REC-261017-S1ZZ']);
+
+    var rl = { id: 'l1', kind: 'otorgado', person: 'Luis', principal: 1000, currency: 'USD', date: '2026-01-10', installments: 2, period: 'mensual',
+      interest: { mode: 'porcentaje', value: 5, basis: 'periodo', method: 'simple' },
+      payments: [{ id: 'p1', date: '2026-02-10', amount: 550 }, { id: 'p2', date: '2026-03-10', amount: 550 }] };
+    var mp1 = R.paymentModel('loan', rl, rl.payments[0], rctx);
+    // 1000 × 5 % × 2 = 100 de interés → 2 cuotas de 550 (500 capital + 50 interés); tras el 1.er pago quedan 550
+    eq('Pago 1 de un préstamo de 1000 al 5 % mensual en 2 cuotas: 550 = 50 interés + 500 capital, quedan 550',
+      mp1.rows.map(function (r) { return r.label + ': ' + r.value; }),
+      ['Préstamo del: 10/01/2026 · $1,000.00', 'Monto pagado: $550.00', 'A intereses: $50.00', 'A capital: $500.00', 'Saldo pendiente: $550.00']);
+    eq('Pago 1: «Pagó: Luis» y queda pendiente', [mp1.partyLabel, mp1.party, mp1.status], ['Pagó', 'Luis', 'Queda pendiente $550.00']);
+    eq('Pago 2 salda el préstamo', R.paymentModel('loan', rl, rl.payments[1], rctx).status, 'Saldado');
+    var ml = R.loanModel(rl, Object.assign({ loanTerms: function () { return '2 cuotas · cada mes · 5 %'; } }, rctx));
+    eq('Comprobante del préstamo: total 1100, pagado 1100, pendiente 0, pagado',
+      [ml.rows.filter(function (r) { return r.strong; })[0].value, ml.rows[4].value, ml.rows[5].value, ml.status],
+      ['$1,100.00', '$1,100.00', '$0.00', 'Préstamo pagado']);
+
+    var rsv = { id: 'v1', date: '2026-10-01', client: 'Ana', concept: 'Zapatos', quantity: 2, unitPrice: 25, amount: 50, currency: 'USD', mode: 'credito',
+      dueDate: '2026-10-31', payments: [{ id: 'q1', date: '2026-10-05', amount: 20 }] };
+    eq('Venta a crédito 2 × 25 = 50, pagado 20, pendiente 30',
+      R.saleModel(rsv, rctx).rows.map(function (r) { return r.value; }), ['Zapatos', '2 × $25.00', '$50.00', '$20.00', '$30.00']);
+    eq('Venta a crédito: estado con vencimiento', R.saleModel(rsv, rctx).status, 'A crédito · vence 31/10/2026');
+    var rd = { id: 'd1', kind: 'cobrar', person: 'Ana', concept: 'Préstamo', amount: 100, currency: 'USD', date: '2026-10-01', payments: [{ id: 'a1', date: '2026-10-02', amount: 30 }] };
+    var mda = R.paymentModel('debt', rd, rd.payments[0], rctx);
+    eq('Abono de 30 a una deuda de 100 → saldo 70', [mda.title, mda.rows[2].value, mda.rows[3].value], ['Recibo de abono', '$30.00', '$70.00']);
+    eq('Estado de la deuda: pendiente 70', R.debtModel(rd, rctx).status, 'Pendiente: $70.00');
+
+    var itV = R.reminderItem({ source: 'venta', concept: 'Zapatos', date: '2026-10-01', pending: 30, currency: 'USD', dueDate: '2026-10-31' }, 'en-US');
+    var itL = R.reminderItem({ source: 'prestamo', next: { n: 2, date: '2026-03-10', amount: 550 }, installments: 2, currency: 'USD' }, 'en-US');
+    eq('Recordatorio: venta por lo pendiente, préstamo por la próxima cuota',
+      [itV, itL], [{ concept: 'Venta (Zapatos) del 01/10/2026', amount: '$30.00', due: '2026-10-31' }, { concept: 'Préstamo, cuota 2 de 2', amount: '$550.00', due: '2026-03-10' }]);
+    eq('Texto del recordatorio (usa solo el primer nombre)', R.reminderText('Ana López', [itV], 'Cambios Express'),
+      'Hola Ana 👋, te escribo para recordarte un pago pendiente:\n• Venta (Zapatos) del 01/10/2026: *$30.00* (vence el 31/10/2026)\n\nCuando puedas, avísame. ¡Muchas gracias!\n— Cambios Express');
+
+    var pdf = R.pdfFromJpeg(new Uint8Array([0xFF, 0xD8, 1, 2, 3, 0xFF, 0xD9]), 100, 50), ps = '';
+    for (var pi = 0; pi < pdf.length; pi++) ps += String.fromCharCode(pdf[pi]);
+    var sx = Number(/startxref\n(\d+)/.exec(ps)[1]);
+    var offs = ps.slice(sx).split('\n').slice(3, 8).map(function (l) { return Number(l.slice(0, 10)); });
+    eq('PDF: cabecera, final, imagen 100×50 en página de 420 × 210 pt',
+      [ps.slice(0, 8), ps.slice(-6), ps.indexOf('/Width 100 /Height 50') > 0, ps.indexOf('/MediaBox [0 0 420 210]') > 0], ['%PDF-1.4', '%%EOF\n', true, true]);
+    eq('PDF: la tabla xref apunta a cada objeto', [ps.slice(sx, sx + 4)].concat(offs.map(function (o, i) { return ps.slice(o, o + 7) === (i + 1) + ' 0 obj'; })),
+      ['xref', true, true, true, true, true]);
 
     section('Migración de datos v1 → v2');
     var v1 = { version: 1, settings: { baseCurrency: 'USD', rates: { USD: 1, EUR: 1.1 } }, categories: [], methods: [],

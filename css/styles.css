@@ -45,11 +45,34 @@
   --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181;
 }
 
+/* Color de acento elegido (Ajustes → Apariencia). Claro y oscuro con contraste suficiente para texto blanco. */
+:root[data-accent="verde"]   { --accent: #0f7a5c; --accent-soft: #e2f3ec; }
+:root[data-accent="morado"]  { --accent: #6a4bc4; --accent-soft: #efebfa; }
+:root[data-accent="naranja"] { --accent: #b4531c; --accent-soft: #fbede4; }
+:root[data-accent="rosa"]    { --accent: #b8336a; --accent-soft: #fae8f0; }
+:root[data-accent="grafito"] { --accent: #3a3a38; --accent-soft: #ececea; }
+@media (prefers-color-scheme: dark) {
+  :root[data-accent="verde"]:not([data-theme="light"])   { --accent: #1b9471; --accent-soft: #14302a; }
+  :root[data-accent="morado"]:not([data-theme="light"])  { --accent: #7f63e0; --accent-soft: #2a2340; }
+  :root[data-accent="naranja"]:not([data-theme="light"]) { --accent: #c9622a; --accent-soft: #3a2618; }
+  :root[data-accent="rosa"]:not([data-theme="light"])    { --accent: #c94b80; --accent-soft: #3a1d2a; }
+  :root[data-accent="grafito"]:not([data-theme="light"]) { --accent: #d6d5cd; --accent-ink: #0b0b0b; --accent-soft: #2a2a28; }
+}
+:root[data-accent="verde"][data-theme="dark"]   { --accent: #1b9471; --accent-soft: #14302a; }
+:root[data-accent="morado"][data-theme="dark"]  { --accent: #7f63e0; --accent-soft: #2a2340; }
+:root[data-accent="naranja"][data-theme="dark"] { --accent: #c9622a; --accent-soft: #3a2618; }
+:root[data-accent="rosa"][data-theme="dark"]    { --accent: #c94b80; --accent-soft: #3a1d2a; }
+:root[data-accent="grafito"][data-theme="dark"] { --accent: #d6d5cd; --accent-ink: #0b0b0b; --accent-soft: #2a2a28; }
+/* Tamaño de letra: todo el texto usa rem */
+:root[data-font="s"] { font-size: 14.5px; }
+:root[data-font="l"] { font-size: 17.5px; }
+:root[data-font="xl"] { font-size: 19px; }
+
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0; background: var(--page); color: var(--ink);
-  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font: .9375rem/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;   /* 15 px con letra normal; escala con el tamaño elegido */
   padding-bottom: calc(76px + env(safe-area-inset-bottom));
 }
 h2 { font-size: 1rem; font-weight: 650; margin: 0 0 12px; }
@@ -509,7 +532,7 @@ dialog::backdrop { background: rgba(0, 0, 0, .35); }
 /* ===== Sprint 1: botón «+», hoja de registro rápido, modo privado y gestos ===== */
 html, body { overscroll-behavior-y: contain; }   /* sin la recarga nativa al arrastrar: usamos la nuestra */
 .fab { position: fixed; right: 16px; bottom: calc(76px + env(safe-area-inset-bottom)); z-index: 12; width: 56px; height: 56px; min-height: 0;
-  padding: 0; border-radius: 18px; border: 0; background: var(--accent); color: var(--accent-ink); box-shadow: 0 6px 18px rgba(37, 106, 191, .35); }
+  padding: 0; border-radius: 18px; border: 0; background: var(--accent); color: var(--accent-ink); box-shadow: 0 6px 18px color-mix(in srgb, var(--accent) 35%, transparent); }
 .fab .ic { width: 26px; height: 26px; stroke-width: 2.4; }
 .fab:active { transform: scale(.95); }
 @media (min-width: 820px) { .fab { bottom: 24px; right: 24px; } }
@@ -664,3 +687,35 @@ label.has-suggest { position: relative; }
 .pay-head h2 { min-width: 0; }
 .pay-edit { flex: none; min-height: 36px; padding: 6px 12px; font-size: .85rem; font-weight: 600; color: var(--accent); }
 .pay-edit .ic { width: 16px; height: 16px; }
+
+/* Comprobantes y WhatsApp */
+.form-head { margin-bottom: 12px; }
+.pay-tools { display: flex; flex-wrap: wrap; gap: 8px; margin: 2px 0 10px; }
+.pay-tools button, .rcpt-actions button { min-height: 36px; padding: 6px 12px; font-size: .85rem; font-weight: 600; gap: 6px; }
+.pay-tools .ic, .rcpt-actions .ic { width: 16px; height: 16px; }
+.wa-btn:not(.primary) { color: #128c4b; border-color: rgba(18, 140, 75, .4); }
+.wa-btn.primary { background: #128c4b; border-color: #128c4b; color: #fff; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .wa-btn:not(.primary) { color: #3ccf7f; border-color: rgba(60, 207, 127, .4); } }
+:root[data-theme="dark"] .wa-btn:not(.primary) { color: #3ccf7f; border-color: rgba(60, 207, 127, .4); }
+.receipt-dialog { width: min(460px, calc(100% - 24px)); max-height: calc(100dvh - 24px); padding: 16px; }
+.receipt-dialog .card-head { margin-bottom: 10px; }
+.rcpt-preview { background: var(--surface-2); border-radius: 12px; padding: 10px; max-height: 46dvh; overflow: auto; }
+.rcpt-preview img { display: block; width: 100%; height: auto; border-radius: 6px; box-shadow: 0 1px 4px rgba(0, 0, 0, .12); }
+.rcpt-phone { margin-top: 12px; }
+.rcpt-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+.rcpt-actions .primary { grid-column: span 2; min-height: 44px; font-size: .95rem; }
+.rcpt-actions .ghost { grid-column: span 2; }
+.receipt-dialog .hint { margin-bottom: 0; }
+
+/* Apariencia */
+.look-row { display: grid; gap: 6px; margin-top: 12px; }
+.look-label { font-size: .85rem; color: var(--ink-2); font-weight: 600; }
+.look-row .seg { margin-bottom: 0; }
+.seg-4 { display: grid; grid-template-columns: repeat(4, 1fr); width: 100%; }
+.seg-3 label, .seg-4 label { padding: 9px 4px; text-align: center; }
+.swatches { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.swatch { flex-direction: row; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 12px; cursor: pointer; font-size: .85rem; color: var(--ink); }
+.swatch input { position: absolute; opacity: 0; width: 1px; height: 1px; min-height: 0; padding: 0; pointer-events: none; }
+.swatch .dot { width: 18px; height: 18px; border-radius: 50%; background: var(--sw); flex: none; }
+.swatch:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); font-weight: 650; }
+.swatch:has(input:focus-visible) { outline: 2px solid var(--accent); }

@@ -875,6 +875,7 @@
   // ================================================================ ajustes
   function renderSettings() {
     var b = base(), s = state.settings;
+    fillReceiptSettings();
     $('#auto-fx').checked = s.autoFx;
     $('#fx-info').textContent = (s.ratesUpdatedAt ? 'Última actualización: ' + fmtTime(s.ratesUpdatedAt) + '. ' : '') +
       'Las tasas «Auto» se actualizan cada 2 minutos: en vivo desde Binance cuando hay par con USDT y, si no, con la tasa diaria. ' +
@@ -2244,6 +2245,7 @@
         '<button type="button" data-action="person-new" data-kind="venta">+ Venta</button>' +
         '<button type="button" data-action="person-new" data-kind="prestamo">+ Préstamo</button>' +
         '<button type="button" data-action="person-new" data-kind="deuda">+ Deuda</button>' +
+        '<button type="button" class="wa-btn" data-action="person-wa">' + icon('i-chat') + (p.owesYou > 0 ? 'Recordar pago' : 'WhatsApp') + '</button>' +
         '<button type="button" class="ghost" data-action="person-edit">Editar ficha</button></div>' +
       '<h3 style="margin-top:14px">Historial (' + hist.length + ')</h3>' +
       '<ul class="list">' + (hist.length ? hist.map(histItemHtml).join('') : '<li class="empty">Todavía no tiene operaciones.</li>') + '</ul>';
@@ -2406,7 +2408,7 @@
     renderDebtAccountSelect();
     debtLabels(f.dataset.kind);
     $('[data-action="cancel-debt"]').classList.add('hidden');
-    $('[data-action="delete-debt"]').classList.add('hidden');
+    $('[data-action="delete-debt"]').classList.add('hidden'); rcptFormBtn('debt', false);
     $('#debt-payments').classList.add('hidden');
   }
 
@@ -2423,7 +2425,7 @@
     renderDebtAccountSelect(); f.accountId.value = d.accountId || '';
     debtLabels(d.kind);
     $('[data-action="cancel-debt"]').classList.remove('hidden');
-    $('[data-action="delete-debt"]').classList.remove('hidden');
+    $('[data-action="delete-debt"]').classList.remove('hidden'); rcptFormBtn('debt', true);
     renderDebts();
     $('#debt-payments').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
@@ -2449,6 +2451,7 @@
     var pct = st.total > 0 ? Math.min(100, st.paid / st.total * 100) : 0;
     $('#pay-title').textContent = (c ? 'Cobro del cambio de ' : 'Entrega del cambio a ') + (x.client || 'cliente');
     setPayEdit('fx-open-edit', x.id, 'Editar cambio');
+    setPayTools('fx', x.id, c && st.pending > 0);
     $('#pay-progress').innerHTML = '<span style="width:' + pct + '%"></span>';
     var sets = (x.settlements || []).slice().sort(function (a, b2) { return a.date < b2.date ? 1 : -1; });
     $('#pay-list').innerHTML = '<li class="sub pay-note" style="border:0;padding:4px 0 2px">Cambio del ' + fmtDate(x.date) + ': ' + (c ? 'el cliente te paga ' : 'le entregas ') +
@@ -2459,7 +2462,7 @@
       sets.map(function (pm) {
         return '<li><span class="avatar ' + (c ? 'in' : 'out') + '">' + icon(c ? 'i-in' : 'i-out') + '</span><div class="main"><div class="title">' + fmtMoney(pm.amount, cur) + '</div>' +
           '<div class="sub">' + fmtDate(pm.date) + (pm.accountId ? ' · ' + esc(accName(pm.accountId)) : ' · sin cuenta') + (pm.note ? ' · ' + esc(pm.note) : '') + '</div></div>' +
-          '<div class="row-actions"><button class="mini" data-del-settle="' + pm.id + '" aria-label="Eliminar">' + icon('i-x') + '</button></div></li>';
+          '<div class="row-actions"><button class="mini" data-rcpt="fx|' + x.id + '|' + pm.id + '" aria-label="Recibo">' + icon('i-doc') + '</button><button class="mini" data-del-settle="' + pm.id + '" aria-label="Eliminar">' + icon('i-x') + '</button></div></li>';
       }).join('');
     var pf = $('#pay-form');
     pf.classList.toggle('hidden', st.status === 'pagada');
@@ -2480,13 +2483,14 @@
     if (amt > st.pending + 0.001) { toast('Supera lo pendiente (' + fmtMoney(st.pending, st.currency) + ')'); return; }
     if (!f.date.value) { toast('Elige la fecha'); return; }
     x.settleSide = st.side;
-    x.settlements = (x.settlements || []).concat([{ id: S.uid(), date: f.date.value, amount: C.round(amt, 2), accountId: f.accountId.value || null, note: f.note.value.trim(), createdAt: Date.now() }]);
+    var nid = S.uid();
+    x.settlements = (x.settlements || []).concat([{ id: nid, date: f.date.value, amount: C.round(amt, 2), accountId: f.accountId.value || null, note: f.note.value.trim(), createdAt: Date.now() }]);
     var ns = C.exchangeSettlement(x);
     if (ns.status === 'pagada') x.status = 'completada';
     invalidateSnapshots(f.date.value);
     f.dataset.debt = '';
-    toast(ns.status === 'pagada' ? (st.side === 'in' ? '¡Cobrado! El cambio queda completado.' : '¡Entregado! El cambio queda completado.')
-      : (st.side === 'in' ? 'Cobro registrado' : 'Entrega registrada') + ' · pendiente ' + fmtMoney(ns.pending, ns.currency));
+    toastAction(ns.status === 'pagada' ? (st.side === 'in' ? '¡Cobrado! El cambio queda completado.' : '¡Entregado! El cambio queda completado.')
+      : (st.side === 'in' ? 'Cobro registrado' : 'Entrega registrada') + ' · pendiente ' + fmtMoney(ns.pending, ns.currency), 'Recibo', function () { openReceipt('fx', x.id, nid); });
     persist();
   }
   function deleteSettlement(sid) {
@@ -2508,7 +2512,7 @@
     b.classList.remove('hidden');
   }
   function renderDebtPayments() {
-    setPayEdit(null);
+    setPayEdit(null); setPayTools(null);
     if (payFx) { renderFxPayments(); return; }
     if (payRef) { renderRefPayments(); return; }
     if (accTab !== 'cobrar' && accTab !== 'pagar') { $('#debt-payments').classList.add('hidden'); return; }
@@ -2519,6 +2523,7 @@
     var bal = C.debtBalance(d), c = d.kind === 'cobrar';
     var pct = d.amount > 0 ? Math.min(100, bal.paid / d.amount * 100) : 0;
     $('#pay-title').textContent = (c ? 'Cobros de ' : 'Pagos a ') + (d.person || '');
+    setPayTools('debt', d.id, c && bal.pending > 0);
     $('#pay-progress').innerHTML = '<span style="width:' + pct + '%"></span>';
     var pays = (d.payments || []).slice().sort(function (a, b2) { return a.date < b2.date ? 1 : -1; });
     $('#pay-list').innerHTML = '<li class="sub" style="border:0;padding:4px 0 8px">' + (c ? 'Cobrado ' : 'Pagado ') + fmtMoney(bal.paid, d.currency) + ' de ' + fmtMoney(d.amount, d.currency) +
@@ -2526,7 +2531,7 @@
       pays.map(function (pm) {
         return '<li><span class="avatar ' + (c ? 'in' : 'out') + '">' + icon(c ? 'i-in' : 'i-out') + '</span><div class="main"><div class="title">' + fmtMoney(pm.amount, d.currency) + '</div>' +
           '<div class="sub">' + fmtDate(pm.date) + (pm.accountId ? ' · ' + esc(accName(pm.accountId)) : ' · sin cuenta') + (pm.note ? ' · ' + esc(pm.note) : '') + '</div></div>' +
-          '<div class="row-actions"><button class="mini" data-del-pay="' + pm.id + '" aria-label="Eliminar abono">' + icon('i-x') + '</button></div></li>';
+          '<div class="row-actions"><button class="mini" data-rcpt="debt|' + d.id + '|' + pm.id + '" aria-label="Recibo">' + icon('i-doc') + '</button><button class="mini" data-del-pay="' + pm.id + '" aria-label="Eliminar abono">' + icon('i-x') + '</button></div></li>';
       }).join('');
     var pf = $('#pay-form');
     pf.classList.toggle('hidden', bal.status === 'pagada');
@@ -2557,7 +2562,7 @@
     else {
       data.id = S.uid(); data.createdAt = Date.now(); data.payments = [];
       state.debts.push(data);
-      toast((kind === 'cobrar' ? 'Por cobrar: ' : 'Por pagar: ') + data.person + ' · ' + fmtMoney(data.amount, data.currency));
+      toastAction((kind === 'cobrar' ? 'Por cobrar: ' : 'Por pagar: ') + data.person + ' · ' + fmtMoney(data.amount, data.currency), 'Comprobante', function () { openReceipt('debt', data.id); });
     }
     state.settings.last.debtCurrency = data.currency;
     resetDebtForm();
@@ -2575,11 +2580,13 @@
     if (amt > bal.pending + 0.001) { toast('El abono supera lo pendiente (' + fmtMoney(bal.pending, d.currency) + ')'); return; }
     if (!f.date.value) { toast('Elige la fecha'); return; }
     d.payments = d.payments || [];
-    d.payments.push({ id: S.uid(), date: f.date.value, amount: C.round(amt, 2), accountId: f.accountId.value || null, note: f.note.value.trim(), createdAt: Date.now() });
+    var nid = S.uid();
+    d.payments.push({ id: nid, date: f.date.value, amount: C.round(amt, 2), accountId: f.accountId.value || null, note: f.note.value.trim(), createdAt: Date.now() });
     invalidateSnapshots(f.date.value);
     f.dataset.debt = '';
     var nb = C.debtBalance(d);
-    toast(nb.status === 'pagada' ? '¡Saldada! ' + (d.kind === 'cobrar' ? 'Cobraste todo.' : 'Pagaste todo.') : 'Abono registrado · pendiente ' + fmtMoney(nb.pending, d.currency));
+    toastAction(nb.status === 'pagada' ? '¡Saldada! ' + (d.kind === 'cobrar' ? 'Cobraste todo.' : 'Pagaste todo.') : 'Abono registrado · pendiente ' + fmtMoney(nb.pending, d.currency),
+      'Recibo', function () { openReceipt('debt', d.id, nid); });
     persist();
   }
 
@@ -2651,8 +2658,9 @@
     $('#pay-list').innerHTML = html + list.map(function (pm) {
       return '<li><span class="avatar ' + (inflow ? 'in' : 'out') + '">' + icon(inflow ? 'i-in' : 'i-out') + '</span><div class="main"><div class="title">' + fmtMoney(pm.amount, cur) + '</div>' +
         '<div class="sub">' + fmtDate(pm.date) + (pm.accountId ? ' · ' + esc(accName(pm.accountId)) : ' · sin cuenta') + (pm.note ? ' · ' + esc(pm.note) : '') + '</div></div>' +
-        '<div class="row-actions"><button class="mini" data-del-ref-pay="' + pm.id + '" aria-label="Eliminar">' + icon('i-x') + '</button></div></li>';
+        '<div class="row-actions"><button class="mini" data-rcpt="' + (sale ? 'sale' : 'loan') + '|' + rec.id + '|' + pm.id + '" aria-label="Recibo">' + icon('i-doc') + '</button><button class="mini" data-del-ref-pay="' + pm.id + '" aria-label="Eliminar">' + icon('i-x') + '</button></div></li>';
     }).join('');
+    setPayTools(sale ? 'sale' : 'loan', rec.id, inflow && st.pending > 0);
     var closed = st.status === 'pagada' || (sale && rec.mode === 'contado');
     pf.classList.toggle('hidden', closed);
     $('#pay-acc-label').textContent = inflow ? 'Entra en' : 'Sale de';
@@ -2671,15 +2679,16 @@
     if (!(amt > 0)) { toast('Ingresa un monto mayor a 0'); return; }
     if (amt > st.pending + 0.001) { toast('Supera lo pendiente (' + fmtMoney(st.pending, rec.currency) + ')'); return; }
     if (!f.date.value) { toast('Elige la fecha'); return; }
-    rec.payments = (rec.payments || []).concat([{ id: S.uid(), date: f.date.value, amount: C.round(amt, 2), accountId: f.accountId.value || null, note: f.note.value.trim(), createdAt: Date.now() }]);
+    var nid = S.uid();
+    rec.payments = (rec.payments || []).concat([{ id: nid, date: f.date.value, amount: C.round(amt, 2), accountId: f.accountId.value || null, note: f.note.value.trim(), createdAt: Date.now() }]);
     if (sale) state.settings.last.saleAccountId = f.accountId.value || null;
     invalidateSnapshots(f.date.value);
     f.dataset.debt = '';
     var ns = sale ? C.saleBalance(rec) : C.loanStatus(rec, S.today());
     var interest = 0;
     if (!sale) { var sp = C.loanPaymentSplit(rec); interest = sp.length ? sp[sp.length - 1].interest : 0; }
-    toast(ns.status === 'pagada' ? (sale ? '¡Venta cobrada!' : '¡Préstamo saldado!') :
-      (sale ? 'Cobro registrado' : 'Pago registrado') + (interest > 0 ? ' (intereses ' + fmtMoney(interest, rec.currency) + ')' : '') + ' · pendiente ' + fmtMoney(ns.pending, rec.currency));
+    toastAction(ns.status === 'pagada' ? (sale ? '¡Venta cobrada!' : '¡Préstamo saldado!') :
+      (sale ? 'Cobro registrado' : 'Pago registrado') + (interest > 0 ? ' (intereses ' + fmtMoney(interest, rec.currency) + ')' : '') + ' · pendiente ' + fmtMoney(ns.pending, rec.currency), 'Recibo', function () { openReceipt(sale ? 'sale' : 'loan', rec.id, nid); });
     persist();
   }
   function deleteRefPay(pid) {
@@ -2688,6 +2697,200 @@
     var pm = byId(rec.payments || [], pid); if (pm) invalidateSnapshots(pm.date);
     rec.payments = (rec.payments || []).filter(function (x) { return x.id !== pid; });
     $('#pay-form').dataset.debt = ''; persist(); toast('Eliminado');
+  }
+
+  // ================================================================ comprobantes y WhatsApp
+  // Colores de acento (versión clara: es la que se usa en el comprobante, siempre sobre fondo blanco)
+  var ACCENTS = { azul: '#256abf', verde: '#0f7a5c', morado: '#6a4bc4', naranja: '#b4531c', rosa: '#b8336a', grafito: '#3a3a38' };
+  function rcptSettings() { return state.settings.receipt || {}; }
+  /** Contexto de los comprobantes: montos reales aunque el modo privado esté activo. */
+  function receiptCtx() {
+    var r = rcptSettings();
+    return { locale: LOCALE, today: S.today(), business: { name: r.name, phone: r.phone, footer: r.footer },
+      loanTerms: function (l) { var p = privacy; privacy = false; try { return loanTermsText(l); } finally { privacy = p; } } };
+  }
+  function recOf(kind, id) {
+    var list = kind === 'fx' ? state.exchanges : kind === 'sale' ? state.sales : kind === 'loan' ? state.loans : state.debts;
+    return byId(list || [], id);
+  }
+  /** Modelo del comprobante de una operación (o del recibo de uno de sus pagos si se da payId). */
+  function receiptModel(kind, id, payId) {
+    var rec = recOf(kind, id), ctx = receiptCtx();
+    if (!rec) return null;
+    if (payId) {
+      var pm = byId((kind === 'fx' ? rec.settlements : rec.payments) || [], payId);
+      return pm ? Receipt.paymentModel(kind, rec, pm, ctx) : null;
+    }
+    return kind === 'fx' ? Receipt.exchangeModel(rec, ctx) : kind === 'sale' ? Receipt.saleModel(rec, ctx)
+      : kind === 'loan' ? Receipt.loanModel(rec, ctx) : Receipt.debtModel(rec, ctx);
+  }
+  function personOf(kind, id) { var r = recOf(kind, id); return r ? (r.client || r.person || '') : ''; }
+  function contactOf(name) {
+    var k = C.personKey(name); if (!k) return null;
+    return (state.contacts || []).filter(function (c) { return C.personKey(c.name) === k; })[0] || null;
+  }
+  function waPhone(raw) { return Receipt.normalizePhone(raw, rcptSettings().countryCode); }
+  /** Número listo para wa.me, o null (con aviso) si es local y falta el código de país. */
+  function waTarget(raw) {
+    var ph = waPhone(raw);
+    if (ph.charAt(0) === '0' || (ph && ph.length < 8)) {
+      toast('Falta el código de país: escribe el número con + (ej.: +58 412…) o ponlo en Ajustes → Comprobantes y WhatsApp');
+      return null;
+    }
+    return ph;
+  }
+  /** Guarda en la ficha del cliente el teléfono escrito al enviar (crea la ficha si no existe). */
+  function rememberPhone(name, phone) {
+    if (!String(name || '').trim() || !phone) return;
+    var c = contactOf(name);
+    if (c) { if (c.phone === phone) return; c.phone = phone; }
+    else { state.contacts = state.contacts || []; state.contacts.push({ id: S.uid(), name: name.trim(), phone: phone, note: '', createdAt: Date.now() }); }
+    persist();
+  }
+  function openWa(phone, msg) {
+    var url = Receipt.waUrl(phone, msg), w = window.open(url, '_blank');
+    if (w) w.opener = null; else location.href = url;
+  }
+  function canShareFiles() {
+    try { return !!(navigator.canShare && navigator.canShare({ files: [new File(['x'], 'x.pdf', { type: 'application/pdf' })] })); } catch (e) { return false; }
+  }
+
+  var rcpt = null;   // comprobante abierto: { model, name, canvas, png, pdf }
+  function openReceipt(kind, id, payId) {
+    var m = receiptModel(kind, id, payId);
+    if (!m) { toast('No se encontró la operación'); return; }
+    var name = personOf(kind, id), c = contactOf(name), canvas = document.createElement('canvas');
+    Receipt.draw(m, canvas, { accent: ACCENTS[uiPrefs().accent] || ACCENTS.azul, scale: 2 });
+    var mine = rcpt = { model: m, name: name, canvas: canvas, png: null, pdf: null };
+    var share = canShareFiles(), dlg = $('#receipt-dialog');
+    $('#rcpt-title').textContent = m.title;
+    $('#rcpt-img').src = canvas.toDataURL('image/png');
+    $('#rcpt-phone').value = c && c.phone ? c.phone : '';
+    $$('[data-share]', dlg).forEach(function (s) { s.textContent = share ? 'Compartir' : 'Descargar'; });
+    $('#rcpt-hint').textContent = share
+      ? '«Enviar por WhatsApp» abre el chat del cliente con el comprobante escrito. Para mandar el PDF o la imagen, toca «Compartir» y elige WhatsApp.'
+      : '«Enviar por WhatsApp» abre el chat con el comprobante escrito. El PDF y la imagen se descargan: arrástralos al chat para adjuntarlos.'
+    if (!rcptSettings().name) $('#rcpt-hint').textContent += ' Pon el nombre de tu negocio en Ajustes → Comprobantes y WhatsApp.';
+    if (!dlg.open) dlg.showModal();
+    // Los archivos se preparan ya: compartir tiene que ocurrir justo al tocar el botón
+    Receipt.canvasBlob(canvas, 'image/png').then(function (b) { mine.png = b; return Receipt.pdfBlob(canvas); })
+      .then(function (b) { mine.pdf = b; }).catch(function () { /* se generan al tocar */ });
+  }
+  function downloadBlob(blob, name) {
+    var a = document.createElement('a'), url = URL.createObjectURL(blob);
+    a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+  }
+  async function shareReceipt(type) {
+    if (!rcpt) return;
+    var r = rcpt, pdf = type === 'pdf';
+    var blob = pdf ? (r.pdf || await Receipt.pdfBlob(r.canvas)) : (r.png || await Receipt.canvasBlob(r.canvas, 'image/png'));
+    var file = new File([blob], 'comprobante-' + r.model.number + (pdf ? '.pdf' : '.png'), { type: pdf ? 'application/pdf' : 'image/png' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file], title: r.model.title, text: r.model.title + ' N.º ' + r.model.number }); return; }
+      catch (e) { if (e && e.name === 'AbortError') return; }
+    }
+    downloadBlob(file, file.name);
+    toast(pdf ? 'PDF descargado' : 'Imagen descargada');
+  }
+  function sendReceiptWa() {
+    if (!rcpt) return;
+    var raw = $('#rcpt-phone').value.trim();
+    var ph = waTarget(raw);
+    if (ph === null) { $('#rcpt-phone').focus(); return; }
+    rememberPhone(rcpt.name, raw);
+    openWa(ph, Receipt.text(rcpt.model));
+  }
+  function copyReceipt() {
+    if (!rcpt) return;
+    var t = Receipt.text(rcpt.model);
+    (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(function () { toast('Texto copiado'); }, function () { toast('No se pudo copiar'); });
+  }
+  /** Lo que esta persona te debe (todo o solo una operación), para el recordatorio. */
+  function pendingFor(name, onlyId) {
+    var k = C.personKey(name);
+    return C.thirdParty(state, S.today()).receivables.filter(function (it) {
+      return it.status !== 'pagada' && (onlyId ? it.id === onlyId : C.personKey(it.person) === k);
+    });
+  }
+  function remindWa(name, onlyId) {
+    var items = pendingFor(name, onlyId), c = contactOf(name), phone = c && c.phone ? waTarget(c.phone) : '';
+    if (phone === null) return;
+    var msg = items.length ? Receipt.reminderText(name, items.map(function (it) { return Receipt.reminderItem(it, LOCALE); }), rcptSettings().name)
+      : 'Hola' + (String(name || '').trim() ? ' ' + String(name).trim().split(/\s+/)[0] : '') + ' 👋';
+    if (!phone) toast('Sin teléfono guardado: elige el chat en WhatsApp (o añádelo en su ficha de cliente)');
+    openWa(phone, msg);
+  }
+  /** Botones «Comprobante» y «Recordar por WhatsApp» de la tarjeta de cobros/pagos. */
+  function setPayTools(kind, id, remind) {
+    var box = $('#pay-tools');
+    if (!kind) { box.classList.add('hidden'); return; }
+    box.classList.remove('hidden');
+    var r = $('#pay-rcpt'), w = $('#pay-remind');
+    r.dataset.kind = w.dataset.kind = kind; r.dataset.id = w.dataset.id = id;
+    w.classList.toggle('hidden', !remind);
+  }
+  function rcptFormBtn(kind, show) { $('[data-action="rcpt-form"][data-kind="' + kind + '"]').classList.toggle('hidden', !show); }
+  function receiptClick(d) {
+    if (d.rcpt) { var p = d.rcpt.split('|'); openReceipt(p[0], p[1], p[2]); return true; }
+    switch (d.action) {
+      case 'rcpt-open': openReceipt(d.kind, d.id); return true;
+      case 'rcpt-form':
+        var fid = { fx: '#fx-form', sale: '#sale-form', loan: '#loan-form', debt: '#debt-form' }[d.kind], eid = fid && $(fid).editId.value;
+        if (eid) openReceipt(d.kind, eid);
+        return true;
+      case 'wa-remind': remindWa(personOf(d.kind, d.id), d.id); return true;
+      case 'person-wa': var pp = personByKey(personOpenKey); if (pp) remindWa(pp.name); return true;
+      case 'rcpt-close': $('#receipt-dialog').close(); return true;
+      case 'rcpt-wa': sendReceiptWa(); return true;
+      case 'rcpt-pdf': shareReceipt('pdf'); return true;
+      case 'rcpt-img': shareReceipt('png'); return true;
+      case 'rcpt-copy': copyReceipt(); return true;
+    }
+    return false;
+  }
+  function fillReceiptSettings() {
+    var f = $('#rcpt-settings'); if (f.contains(document.activeElement)) return;
+    var r = rcptSettings();
+    f.bizName.value = r.name || ''; f.phone.value = r.phone || ''; f.countryCode.value = r.countryCode || ''; f.footer.value = r.footer || '';
+  }
+  function bindReceipts() {
+    var f = $('#rcpt-settings');
+    f.addEventListener('submit', function (e) { e.preventDefault(); });
+    f.addEventListener('change', function () {
+      state.settings.receipt = { name: f.bizName.value.trim(), phone: f.phone.value.trim(), footer: f.footer.value.trim(), countryCode: f.countryCode.value.replace(/\D/g, '') };
+      persist(); toast('Datos de los comprobantes guardados');
+    });
+    var dlg = $('#receipt-dialog');
+    dlg.addEventListener('click', function (e) {   // tocar fuera del recuadro lo cierra
+      if (e.target !== dlg) return;
+      var r = dlg.getBoundingClientRect();
+      if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) dlg.close();
+    });
+    dlg.addEventListener('close', function () { rcpt = null; $('#rcpt-img').removeAttribute('src'); });
+  }
+
+  // ---- Apariencia (por dispositivo, no se sincroniza)
+  function applyLook() {
+    var p = uiPrefs(), r = document.documentElement;
+    if (p.theme === 'light' || p.theme === 'dark') r.setAttribute('data-theme', p.theme); else r.removeAttribute('data-theme');
+    if (p.accent && p.accent !== 'azul' && ACCENTS[p.accent]) r.setAttribute('data-accent', p.accent); else r.removeAttribute('data-accent');
+    if (p.font && p.font !== 'm') r.setAttribute('data-font', p.font); else r.removeAttribute('data-font');
+    var dark = p.theme === 'dark' || (p.theme !== 'light' && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches);
+    var meta = document.querySelector('meta[name="theme-color"]'); if (meta) meta.content = dark ? '#0d0d0d' : '#f9f9f7';
+  }
+  function bindLook() {
+    var p = uiPrefs(), card = $('#look-card');
+    var check = function (name, v) { var i = card.querySelector('input[name="' + name + '"][value="' + v + '"]'); if (i) i.checked = true; };
+    check('look-theme', p.theme || 'auto'); check('look-accent', ACCENTS[p.accent] ? p.accent : 'azul'); check('look-font', p.font || 'm');
+    card.addEventListener('change', function (e) {
+      var key = { 'look-theme': 'theme', 'look-accent': 'accent', 'look-font': 'font' }[e.target.name];
+      if (!key) return;
+      setUiPref(key, e.target.value); applyLook();
+      renderAll();   // los gráficos se redibujan con el tamaño y los colores nuevos
+    });
+    if (window.matchMedia) { var mq = matchMedia('(prefers-color-scheme: dark)'); if (mq.addEventListener) mq.addEventListener('change', applyLook); }
+    applyLook();
   }
 
   // ---- Ventas
@@ -2733,7 +2936,7 @@
     renderSaleAccounts();
     $('#sale-form-title').textContent = 'Nueva venta';
     $('[data-action="cancel-sale"]').classList.add('hidden');
-    $('[data-action="delete-sale"]').classList.add('hidden');
+    $('[data-action="delete-sale"]').classList.add('hidden'); rcptFormBtn('sale', false);
     syncSaleForm();
   }
   function editSale(id) {
@@ -2752,7 +2955,7 @@
     renderSaleAccounts(); f.accountId.value = sv.accountId || '';
     $('#sale-form-title').textContent = 'Editar venta';
     $('[data-action="cancel-sale"]').classList.remove('hidden');
-    $('[data-action="delete-sale"]').classList.remove('hidden');
+    $('[data-action="delete-sale"]').classList.remove('hidden'); rcptFormBtn('sale', true);
     syncSaleForm();
     f.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
@@ -2783,7 +2986,8 @@
       data.id = S.uid(); data.createdAt = Date.now();
       data.payments = down > 0 ? [{ id: S.uid(), date: data.date, amount: C.round(down, 2), accountId: f.downAccountId.value || null, note: 'Abono inicial', createdAt: Date.now() }] : [];
       state.sales.push(data);
-      toast((mode === 'contado' ? 'Venta de contado: ' : 'Venta por cobrar: ') + fmtMoney(amount, data.currency) + (mode === 'credito' ? ' · queda en «Por cobrar»' : ''));
+      toastAction((mode === 'contado' ? 'Venta de contado: ' : 'Venta por cobrar: ') + fmtMoney(amount, data.currency) + (mode === 'credito' ? ' · queda en «Por cobrar»' : ''),
+        'Comprobante', function () { openReceipt('sale', data.id); });
     }
     resetSaleForm();
     persist();
@@ -2872,7 +3076,7 @@
     $('#loan-form-title').textContent = 'Nuevo préstamo';
     $('#loan-edit-hint').classList.add('hidden');
     $('[data-action="cancel-loan"]').classList.add('hidden');
-    $('[data-action="delete-loan"]').classList.add('hidden');
+    $('[data-action="delete-loan"]').classList.add('hidden'); rcptFormBtn('loan', false);
     syncLoanForm();
   }
   function editLoan(id) {
@@ -2895,7 +3099,7 @@
       : 'Corrige lo que necesites y pulsa Guardar: el plan de cuotas se recalcula.';
     hint.classList.remove('hidden');
     $('[data-action="cancel-loan"]').classList.remove('hidden');
-    $('[data-action="delete-loan"]').classList.remove('hidden');
+    $('[data-action="delete-loan"]').classList.remove('hidden'); rcptFormBtn('loan', true);
     syncLoanForm();
     renderLoans();
     f.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -2923,7 +3127,7 @@
       d.id = S.uid(); d.createdAt = Date.now(); d.payments = [];
       state.loans.push(d);
       var sc = C.loanSchedule(d);
-      toast('Préstamo guardado · ' + sc.rows.length + ' cuota(s) · total ' + fmtMoney(sc.total, d.currency));
+      toastAction('Préstamo guardado · ' + sc.rows.length + ' cuota(s) · total ' + fmtMoney(sc.total, d.currency), 'Comprobante', function () { openReceipt('loan', d.id); });
     }
     resetLoanForm();
     persist();
@@ -3117,7 +3321,7 @@
     $('#fx-form-title').textContent = 'Nuevo cambio';
     $('#fx-settle-hint').classList.add('hidden');
     $('[data-action="cancel-fx"]').classList.add('hidden');
-    $('[data-action="delete-fx"]').classList.add('hidden');
+    $('[data-action="delete-fx"]').classList.add('hidden'); rcptFormBtn('fx', false);
     syncFxForm();
   }
 
@@ -3159,7 +3363,7 @@
       hint.classList.remove('hidden');
     } else hint.classList.add('hidden');
     $('[data-action="cancel-fx"]').classList.remove('hidden');
-    $('[data-action="delete-fx"]').classList.remove('hidden');
+    $('[data-action="delete-fx"]').classList.remove('hidden'); rcptFormBtn('fx', true);
     syncFxForm();
     renderExchanges();
     f.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -3211,7 +3415,7 @@
       data.id = S.uid(); data.createdAt = Date.now();
       state.exchanges.push(data);
       var pr = C.exchangeProfit(data, rates()).profit;
-      toast('Cambio guardado · ganancia ' + fmtSigned(pr, base()));
+      toastAction('Cambio guardado · ganancia ' + fmtSigned(pr, base()), 'Comprobante', function () { openReceipt('fx', data.id); });
     }
     var last = state.settings.last;
     last.fxIn = data.inCurrency; last.fxOut = data.outCurrency; last.fxInAcc = data.inAccountId; last.fxOutAcc = data.outAccountId;
@@ -3945,6 +4149,8 @@
     });
     $('#privacy-on-open').checked = !!uiPrefs().privacyOnOpen;
     $('#privacy-on-open').addEventListener('change', function (e) { setUiPref('privacyOnOpen', e.target.checked); });
+    bindLook();
+    bindReceipts();
     bindGestures();
     $('#sync-card').addEventListener('submit', onSyncForm);
     $('#debt-form').addEventListener('submit', onDebtSubmit);
@@ -4112,6 +4318,7 @@
       var el = e.target.closest('button');
       if (!el) { openRow(e); return; }
       var d = el.dataset;
+      if (receiptClick(d)) return;
       if (d.goto) showView(d.goto);
       else if (d.action === 'open-search') { showView('inversiones'); setTimeout(function () { $('#asset-search').focus(); }, 0); }
       else if (d.action === 'asset-back') showView('inversiones');
