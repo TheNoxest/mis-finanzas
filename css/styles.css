@@ -719,3 +719,14 @@ label.has-suggest { position: relative; }
 .swatch .dot { width: 18px; height: 18px; border-radius: 50%; background: var(--sw); flex: none; }
 .swatch:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); font-weight: 650; }
 .swatch:has(input:focus-visible) { outline: 2px solid var(--accent); }
+
+/* Pagos mixtos (varias cuentas) */
+.mix-box { margin-top: -6px; min-width: 0; }
+.mix-hide { display: none !important; }
+.mix-panel { border: 1px solid var(--border); border-radius: 12px; padding: 10px; background: var(--surface-2); }
+.mix-panel select, .mix-panel input { background: var(--surface); }
+.mix-head, .mix-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mix-head { font-size: .8rem; color: var(--ink-2); font-weight: 600; margin-bottom: 8px; }
+.mix-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(70px, 34%) 32px; gap: 6px; align-items: center; margin-bottom: 6px; }
+.mix-row > * { min-width: 0; }
+.mix-status { font-size: .8rem; font-weight: 600; }

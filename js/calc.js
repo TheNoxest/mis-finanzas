@@ -213,6 +213,45 @@
     return round(op.side === 'venta' ? gross - fee : gross + fee, 2);
   }
 
+  // =================================================================== Pagos mixtos (varias cuentas)
+  /**
+   * Cómo se reparte un monto entre cuentas → [{accountId, amount}].
+   * Con `splits` (pago mixto: 2 o más cuentas) se usan esos; si no, todo va a `accountId` (o a ninguna si no hay cuenta).
+   */
+  function splitsOf(splits, accountId, amount) {
+    if (splits && splits.length) return splits.filter(function (s) { return s && s.accountId; });
+    return accountId ? [{ accountId: accountId, amount: Number(amount) || 0 }] : [];
+  }
+  /** Reparto de un pago, abono, cobro o entrega ({amount, accountId, splits?}). */
+  function paySplits(pm) { return splitsOf(pm.splits, pm.accountId, pm.amount); }
+  /** Reparto de un lado de un cambio: 'in' (lo recibido) u 'out' (lo entregado). */
+  function fxSplits(x, side) {
+    return side === 'in' ? splitsOf(x.inSplits, x.inAccountId, x.received) : splitsOf(x.outSplits, x.outAccountId, x.delivered);
+  }
+  /** Parte de un reparto que corresponde a una cuenta (0 si no la usa). */
+  function splitAmount(list, accountId) {
+    return round(sum(list.filter(function (s) { return s.accountId === accountId; }).map(function (s) { return Number(s.amount); })), 2);
+  }
+  /**
+   * Revisa un reparto escrito en el formulario contra el total.
+   * Une filas de la misma cuenta, ignora las de monto 0. error: 'cuenta' (monto sin cuenta) | 'total' (no suma el total) | null.
+   */
+  function checkSplits(rows, total) {
+    var map = {}, order = [], noAcc = false;
+    (rows || []).forEach(function (r) {
+      var a = Number(r.amount) || 0;
+      if (!(a > 0)) return;
+      if (!r.accountId) { noAcc = true; return; }
+      if (map[r.accountId] == null) { map[r.accountId] = 0; order.push(r.accountId); }
+      map[r.accountId] = round(map[r.accountId] + a, 2);
+    });
+    var list = order.map(function (id) { return { accountId: id, amount: map[id] }; });
+    var assigned = round(sum(list.map(function (s) { return s.amount; })), 2);
+    var remaining = round((Number(total) || 0) - assigned, 2);
+    return { list: list, assigned: assigned, remaining: remaining, mixed: list.length > 1,
+      error: noAcc ? 'cuenta' : Math.abs(remaining) >= 0.005 ? 'total' : null };
+  }
+
   /**
    * Saldo de cada cuenta en SU moneda:
    *   saldo = saldo inicial + ingresos − egresos + transferencias recibidas
@@ -248,28 +287,30 @@
     // Cambios de divisas: entra lo recibido, sale lo entregado y los costos (salvo lo que siga pendiente)
     (state.exchanges || []).forEach(function (x) {
       var st = exchangeSettlement(x);
-      if (st && st.side === 'in') (x.settlements || []).forEach(function (s) { if (s.accountId) add(s.accountId, Number(s.amount), s); });
-      else if (x.status !== 'pendiente_cobro' && x.inAccountId) add(x.inAccountId, Number(x.received), x);
-      if (st && st.side === 'out') (x.settlements || []).forEach(function (s) { if (s.accountId) add(s.accountId, -Number(s.amount), s); });
-      else if (x.status !== 'pendiente_entrega' && x.outAccountId) add(x.outAccountId, -Number(x.delivered), x);
+      // Cada parte de un pago mixto entra o sale de su cuenta
+      var each = function (list, sign, item) { list.forEach(function (s) { add(s.accountId, sign * Number(s.amount), item); }); };
+      if (st && st.side === 'in') (x.settlements || []).forEach(function (s) { each(paySplits(s), 1, s); });
+      else if (x.status !== 'pendiente_cobro') each(fxSplits(x, 'in'), 1, x);
+      if (st && st.side === 'out') (x.settlements || []).forEach(function (s) { each(paySplits(s), -1, s); });
+      else if (x.status !== 'pendiente_entrega') each(fxSplits(x, 'out'), -1, x);
       (x.costs || []).forEach(function (c) { if (c.accountId) add(c.accountId, -Number(c.amount), x); });
     });
     // Deudas: un préstamo mueve dinero al crearse; cada abono entra (por cobrar) o sale (por pagar)
     // Ventas: de contado entra todo en su cuenta; por cobrar entra con cada cobro
     (state.sales || []).forEach(function (sv) {
-      if (sv.mode === 'contado') { if (sv.accountId) add(sv.accountId, Number(sv.amount), sv); }
-      else (sv.payments || []).forEach(function (pm) { if (pm.accountId) add(pm.accountId, Number(pm.amount), pm); });
+      if (sv.mode === 'contado') splitsOf(sv.splits, sv.accountId, sv.amount).forEach(function (s) { add(s.accountId, Number(s.amount), sv); });
+      else (sv.payments || []).forEach(function (pm) { paySplits(pm).forEach(function (s) { add(s.accountId, Number(s.amount), pm); }); });
     });
     // Préstamos: el capital sale (presté) o entra (me prestaron); cada pago entra o sale
     (state.loans || []).forEach(function (l) {
       var sign = l.kind === 'recibido' ? 1 : -1;
       if (l.accountId) add(l.accountId, sign * Number(l.principal), l);
-      (l.payments || []).forEach(function (pm) { if (pm.accountId) add(pm.accountId, -sign * Number(pm.amount), pm); });
+      (l.payments || []).forEach(function (pm) { paySplits(pm).forEach(function (s) { add(s.accountId, -sign * Number(s.amount), pm); }); });
     });
     (state.debts || []).forEach(function (d) {
       var sign = d.kind === 'cobrar' ? 1 : -1;
       if (d.accountId) add(d.accountId, -sign * Number(d.amount), d);
-      (d.payments || []).forEach(function (pm) { if (pm.accountId) add(pm.accountId, sign * Number(pm.amount), pm); });
+      (d.payments || []).forEach(function (pm) { paySplits(pm).forEach(function (s) { add(s.accountId, sign * Number(s.amount), pm); }); });
     });
     return state.accounts.map(function (a) {
       var m = map[a.id];
@@ -1045,6 +1086,7 @@
     saleBalance: saleBalance, PERIODS: PERIODS, addPeriod: addPeriod, loanSchedule: loanSchedule, loanPaymentSplit: loanPaymentSplit, loanStatus: loanStatus,
     flowTransactions: flowTransactions,
     samePeg: samePeg,
+    splitsOf: splitsOf, paySplits: paySplits, fxSplits: fxSplits, splitAmount: splitAmount, checkSplits: checkSplits,
     transferFee: transferFee,
     parseAmount: parseAmount, parseNum: parseNum,
     seriesDates: seriesDates, monthlyCashflow: monthlyCashflow, categoryBreakdown: categoryBreakdown,

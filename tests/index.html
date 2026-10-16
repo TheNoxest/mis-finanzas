@@ -632,6 +632,38 @@
     eq('Sin inversiones y conservador → empezar con BND, SHY, VT',
       Insights.ideas({ rows: [], byType: [] }, 'conservador')[0].items.map(function (i) { return i.ticker; }), ['BND', 'SHY', 'VT']);
 
+    section('Pagos mixtos (varias cuentas)');
+    eq('Pago sin reparto: todo en su cuenta', C.paySplits({ amount: 100, accountId: 'A' }), [{ accountId: 'A', amount: 100 }]);
+    eq('Pago sin cuenta: no mueve ninguna', C.paySplits({ amount: 100, accountId: null }), []);
+    eq('Pago mixto: usa el reparto', C.paySplits({ amount: 100, accountId: 'A', splits: [{ accountId: 'A', amount: 60 }, { accountId: 'B', amount: 40 }] }),
+      [{ accountId: 'A', amount: 60 }, { accountId: 'B', amount: 40 }]);
+    var ck = C.checkSplits([{ accountId: 'A', amount: 50 }, { accountId: 'B', amount: 30 }, { accountId: 'A', amount: 20 }, { accountId: '', amount: 0 }], 100);
+    eq('Reparto 50 A + 30 B + 20 A de 100 → A 70 + B 30, completo', [ck.list, ck.remaining, ck.error, ck.mixed], [[{ accountId: 'A', amount: 70 }, { accountId: 'B', amount: 30 }], 0, null, true]);
+    eq('Reparto 60 + 30 de 100 → falta 10', [C.checkSplits([{ accountId: 'A', amount: 60 }, { accountId: 'B', amount: 30 }], 100).remaining, C.checkSplits([{ accountId: 'A', amount: 60 }, { accountId: 'B', amount: 30 }], 100).error], [10, 'total']);
+    eq('Monto sin cuenta → error «cuenta»', C.checkSplits([{ accountId: 'A', amount: 60 }, { accountId: '', amount: 40 }], 100).error, 'cuenta');
+    eq('Decimales: 33,33 + 66,67 = 100 sin error', C.checkSplits([{ accountId: 'A', amount: 33.33 }, { accountId: 'B', amount: 66.67 }], 100).error, null);
+
+    var mixState = {
+      settings: { baseCurrency: 'USD', rates: { USD: 1, USDT: 1 } },
+      accounts: [{ id: 'zelle', currency: 'USD', initialBalance: 0 }, { id: 'cash', currency: 'USD', initialBalance: 0 },
+        { id: 'bin', currency: 'USDT', initialBalance: 500 }, { id: 'bin2', currency: 'USDT', initialBalance: 500 }],
+      transactions: [], investments: [],
+      exchanges: [{ id: 'x', date: '2026-10-16', status: 'completada', amount: 200, inCurrency: 'USD', outCurrency: 'USDT', rate: 1, received: 200, delivered: 194,
+        inAccountId: 'zelle', inSplits: [{ accountId: 'zelle', amount: 120 }, { accountId: 'cash', amount: 80 }],
+        outAccountId: 'bin', outSplits: [{ accountId: 'bin', amount: 100 }, { accountId: 'bin2', amount: 94 }], costs: [] },
+        { id: 'x2', date: '2026-10-16', status: 'pendiente_cobro', amount: 50, inCurrency: 'USD', outCurrency: 'USDT', rate: 1, received: 50, delivered: 50,
+          inAccountId: 'zelle', outAccountId: 'bin', costs: [], settlements: [{ id: 's', date: '2026-10-17', amount: 50, accountId: 'zelle', splits: [{ accountId: 'zelle', amount: 30 }, { accountId: 'cash', amount: 20 }] }] }],
+      debts: [{ id: 'd', kind: 'cobrar', person: 'Ana', amount: 100, currency: 'USD', date: '2026-10-01',
+        payments: [{ id: 'p', date: '2026-10-02', amount: 100, accountId: 'zelle', splits: [{ accountId: 'zelle', amount: 60 }, { accountId: 'cash', amount: 40 }] }] }],
+      sales: [{ id: 'v', date: '2026-10-03', amount: 30, currency: 'USD', mode: 'contado', accountId: 'zelle', splits: [{ accountId: 'zelle', amount: 10 }, { accountId: 'cash', amount: 20 }] }],
+      loans: []
+    };
+    var mixBal = {}; C.accountBalances(mixState).forEach(function (b) { mixBal[b.account.id] = b.balance; });
+    // Zelle: +120 cambio +30 cobro +60 abono +10 venta = 220 · Efectivo: +80 +20 +40 +20 = 160
+    // Binance: 500 − 100 − 50 (entrega del cambio pendiente de cobro) = 350 · Binance 2: 500 − 94 = 406
+    eq('Saldos con pagos mixtos: Zelle 220, Efectivo 160, Binance 350, Binance 2 406', mixBal, { zelle: 220, cash: 160, bin: 350, bin2: 406 });
+    eq('Parte de una cuenta en un reparto', C.splitAmount(C.fxSplits(mixState.exchanges[0], 'out'), 'bin2'), 94);
+
     section('Comprobantes y WhatsApp');
     var R = window.Receipt, rctx = { locale: 'en-US', today: '2026-10-20', business: { name: 'Cambios Express', footer: '¡Gracias!' } };
     eq('Número estable: prefijo + AAMMDD + 4 del id', R.number('CAM', '2026-10-16', 'ab12cd34-ffff'), 'CAM-261016-AB12');

@@ -141,8 +141,16 @@
   function accountInUse(id) {
     return state.transactions.some(function (t) { return t.accountId === id || t.fromAccountId === id || t.toAccountId === id; }) ||
            state.investments.some(function (i) { return i.accountId === id; }) ||
-           state.debts.some(function (d) { return d.accountId === id || (d.payments || []).some(function (p) { return p.accountId === id; }); }) ||
-           state.exchanges.some(function (x) { return x.inAccountId === id || x.outAccountId === id || (x.costs || []).some(function (c) { return c.accountId === id; }); });
+           state.debts.some(function (d) { return d.accountId === id || paysUse(d.payments, id); }) ||
+           (state.sales || []).some(function (sv) { return C.splitAmount(C.splitsOf(sv.splits, sv.accountId, sv.amount), id) || sv.accountId === id || paysUse(sv.payments, id); }) ||
+           (state.loans || []).some(function (l) { return l.accountId === id || paysUse(l.payments, id); }) ||
+           state.exchanges.some(function (x) {
+             return C.fxSplits(x, 'in').concat(C.fxSplits(x, 'out')).some(function (s) { return s.accountId === id; }) ||
+               x.inAccountId === id || x.outAccountId === id || paysUse(x.settlements, id) || (x.costs || []).some(function (c) { return c.accountId === id; });
+           });
+  }
+  function paysUse(list, id) {
+    return (list || []).some(function (p) { return p.accountId === id || C.paySplits(p).some(function (s) { return s.accountId === id; }); });
   }
   function monthRange(ym) {
     var p = ym.split('-').map(Number);
@@ -2461,7 +2469,7 @@
       ' · pendiente <b>' + fmtMoney(st.pending, cur) + '</b></li>' +
       sets.map(function (pm) {
         return '<li><span class="avatar ' + (c ? 'in' : 'out') + '">' + icon(c ? 'i-in' : 'i-out') + '</span><div class="main"><div class="title">' + fmtMoney(pm.amount, cur) + '</div>' +
-          '<div class="sub">' + fmtDate(pm.date) + (pm.accountId ? ' · ' + esc(accName(pm.accountId)) : ' · sin cuenta') + (pm.note ? ' · ' + esc(pm.note) : '') + '</div></div>' +
+          '<div class="sub">' + fmtDate(pm.date) + ' · ' + payAccText(pm, cur) + (pm.note ? ' · ' + esc(pm.note) : '') + '</div></div>' +
           '<div class="row-actions"><button class="mini" data-rcpt="fx|' + x.id + '|' + pm.id + '" aria-label="Recibo">' + icon('i-doc') + '</button><button class="mini" data-del-settle="' + pm.id + '" aria-label="Eliminar">' + icon('i-x') + '</button></div></li>';
       }).join('');
     var pf = $('#pay-form');
@@ -2472,6 +2480,7 @@
       pf.dataset.debt = 'fx:' + x.id;
       pf.amount.value = st.pending; pf.date.value = S.today(); pf.note.value = '';
       fillSelect(pf.accountId, accountsFor(cur, 'Sin cuenta'), (c ? x.inAccountId : x.outAccountId) || '');
+      pf.dataset.cur = cur; mixReset(payMix);
     }
   }
   /** Registra un cobro (o entrega) del cambio; si queda saldado, el cambio pasa a «completado». */
@@ -2482,9 +2491,11 @@
     if (!(amt > 0)) { toast('Ingresa un monto mayor a 0'); return; }
     if (amt > st.pending + 0.001) { toast('Supera lo pendiente (' + fmtMoney(st.pending, st.currency) + ')'); return; }
     if (!f.date.value) { toast('Elige la fecha'); return; }
+    var tg = payTarget(f);
+    if (tg.error) { toast(tg.error); return; }
     x.settleSide = st.side;
     var nid = S.uid();
-    x.settlements = (x.settlements || []).concat([{ id: nid, date: f.date.value, amount: C.round(amt, 2), accountId: f.accountId.value || null, note: f.note.value.trim(), createdAt: Date.now() }]);
+    x.settlements = (x.settlements || []).concat([withSplits({ id: nid, date: f.date.value, amount: C.round(amt, 2), accountId: tg.accountId, note: f.note.value.trim(), createdAt: Date.now() }, tg)]);
     var ns = C.exchangeSettlement(x);
     if (ns.status === 'pagada') x.status = 'completada';
     invalidateSnapshots(f.date.value);
@@ -2530,7 +2541,7 @@
       ' · pendiente <b>' + fmtMoney(bal.pending, d.currency) + '</b></li>' +
       pays.map(function (pm) {
         return '<li><span class="avatar ' + (c ? 'in' : 'out') + '">' + icon(c ? 'i-in' : 'i-out') + '</span><div class="main"><div class="title">' + fmtMoney(pm.amount, d.currency) + '</div>' +
-          '<div class="sub">' + fmtDate(pm.date) + (pm.accountId ? ' · ' + esc(accName(pm.accountId)) : ' · sin cuenta') + (pm.note ? ' · ' + esc(pm.note) : '') + '</div></div>' +
+          '<div class="sub">' + fmtDate(pm.date) + ' · ' + payAccText(pm, d.currency) + (pm.note ? ' · ' + esc(pm.note) : '') + '</div></div>' +
           '<div class="row-actions"><button class="mini" data-rcpt="debt|' + d.id + '|' + pm.id + '" aria-label="Recibo">' + icon('i-doc') + '</button><button class="mini" data-del-pay="' + pm.id + '" aria-label="Eliminar abono">' + icon('i-x') + '</button></div></li>';
       }).join('');
     var pf = $('#pay-form');
@@ -2541,6 +2552,7 @@
       pf.dataset.debt = d.id;
       pf.amount.value = bal.pending; pf.date.value = S.today(); pf.note.value = '';
       fillSelect(pf.accountId, accountsFor(d.currency, 'Sin cuenta'), d.accountId || '');
+      pf.dataset.cur = d.currency; mixReset(payMix);
     }
   }
 
@@ -2580,8 +2592,10 @@
     if (amt > bal.pending + 0.001) { toast('El abono supera lo pendiente (' + fmtMoney(bal.pending, d.currency) + ')'); return; }
     if (!f.date.value) { toast('Elige la fecha'); return; }
     d.payments = d.payments || [];
+    var tg = payTarget(f);
+    if (tg.error) { toast(tg.error); return; }
     var nid = S.uid();
-    d.payments.push({ id: nid, date: f.date.value, amount: C.round(amt, 2), accountId: f.accountId.value || null, note: f.note.value.trim(), createdAt: Date.now() });
+    d.payments.push(withSplits({ id: nid, date: f.date.value, amount: C.round(amt, 2), accountId: tg.accountId, note: f.note.value.trim(), createdAt: Date.now() }, tg));
     invalidateSnapshots(f.date.value);
     f.dataset.debt = '';
     var nb = C.debtBalance(d);
@@ -2657,7 +2671,7 @@
     $('#pay-progress').innerHTML = '<span style="width:' + pct + '%"></span>';
     $('#pay-list').innerHTML = html + list.map(function (pm) {
       return '<li><span class="avatar ' + (inflow ? 'in' : 'out') + '">' + icon(inflow ? 'i-in' : 'i-out') + '</span><div class="main"><div class="title">' + fmtMoney(pm.amount, cur) + '</div>' +
-        '<div class="sub">' + fmtDate(pm.date) + (pm.accountId ? ' · ' + esc(accName(pm.accountId)) : ' · sin cuenta') + (pm.note ? ' · ' + esc(pm.note) : '') + '</div></div>' +
+        '<div class="sub">' + fmtDate(pm.date) + ' · ' + payAccText(pm, cur) + (pm.note ? ' · ' + esc(pm.note) : '') + '</div></div>' +
         '<div class="row-actions"><button class="mini" data-rcpt="' + (sale ? 'sale' : 'loan') + '|' + rec.id + '|' + pm.id + '" aria-label="Recibo">' + icon('i-doc') + '</button><button class="mini" data-del-ref-pay="' + pm.id + '" aria-label="Eliminar">' + icon('i-x') + '</button></div></li>';
     }).join('');
     setPayTools(sale ? 'sale' : 'loan', rec.id, inflow && st.pending > 0);
@@ -2669,6 +2683,7 @@
       pf.dataset.debt = payRef.kind + ':' + rec.id;
       pf.amount.value = !sale && st.next ? st.next.amount : st.pending; pf.date.value = today; pf.note.value = '';
       fillSelect(pf.accountId, accountsFor(cur, 'Sin cuenta'), (sale ? state.settings.last.saleAccountId : rec.accountId) || '');
+      pf.dataset.cur = cur; mixReset(payMix);
     }
   }
   function refPay(f) {
@@ -2679,9 +2694,11 @@
     if (!(amt > 0)) { toast('Ingresa un monto mayor a 0'); return; }
     if (amt > st.pending + 0.001) { toast('Supera lo pendiente (' + fmtMoney(st.pending, rec.currency) + ')'); return; }
     if (!f.date.value) { toast('Elige la fecha'); return; }
+    var tg = payTarget(f);
+    if (tg.error) { toast(tg.error); return; }
     var nid = S.uid();
-    rec.payments = (rec.payments || []).concat([{ id: nid, date: f.date.value, amount: C.round(amt, 2), accountId: f.accountId.value || null, note: f.note.value.trim(), createdAt: Date.now() }]);
-    if (sale) state.settings.last.saleAccountId = f.accountId.value || null;
+    rec.payments = (rec.payments || []).concat([withSplits({ id: nid, date: f.date.value, amount: C.round(amt, 2), accountId: tg.accountId, note: f.note.value.trim(), createdAt: Date.now() }, tg)]);
+    if (sale) state.settings.last.saleAccountId = tg.accountId;
     invalidateSnapshots(f.date.value);
     f.dataset.debt = '';
     var ns = sale ? C.saleBalance(rec) : C.loanStatus(rec, S.today());
@@ -2697,6 +2714,163 @@
     var pm = byId(rec.payments || [], pid); if (pm) invalidateSnapshots(pm.date);
     rec.payments = (rec.payments || []).filter(function (x) { return x.id !== pid; });
     $('#pay-form').dataset.debt = ''; persist(); toast('Eliminado');
+  }
+
+  // ================================================================ pagos mixtos (varias cuentas)
+  var payMix = null, fxInMix = null, fxOutMix = null, saleMix = null;
+  /** Cuentas para una parte del pago en `cur`: la misma moneda o una de igual valor (USD ↔ USDT). */
+  function mixAccountOptions(cur) {
+    return [{ value: '', label: 'Elige la cuenta' }].concat(state.accounts.filter(function (ac) { return C.samePeg(ac.currency, cur); })
+      .map(function (ac) { return { value: ac.id, label: ac.name + (ac.currency !== cur ? ' (' + ac.currency + ')' : '') }; }));
+  }
+  /**
+   * Añade «Dividir entre varias cuentas» bajo el selector de cuenta `sel`.
+   * opts: { total: () => monto a repartir, currency: () => moneda }
+   */
+  function mixInit(sel, opts) {
+    var lab = sel.closest('label'), box = document.createElement('div');
+    box.className = 'mix-box' + (lab.classList.contains('span2') ? ' span2' : '') + (lab.classList.contains('only-contado') ? ' only-contado' : '');
+    box.innerHTML = '<button type="button" class="link small mix-on" data-mix="on">＋ Dividir entre varias cuentas</button>' +
+      '<div class="mix-panel hidden"><div class="mix-head"><span class="mix-title"></span>' +
+      '<button type="button" class="link small" data-mix="off">Una sola cuenta</button></div>' +
+      '<div class="mix-rows"></div>' +
+      '<div class="mix-foot"><button type="button" class="link small" data-mix="add">＋ Otra cuenta</button><span class="mix-status" role="status"></span></div></div>';
+    lab.after(box);
+    var m = { sel: sel, lab: lab, box: box, opts: opts, on: false, touched: false };
+    box._mix = m;
+    return m;
+  }
+  function mixLabel(m) {
+    var span = m.lab.querySelector('span');
+    return (span ? span.textContent : (m.lab.firstChild && m.lab.firstChild.nodeValue) || '').trim();
+  }
+  function mixRow(m, accId, amount) {
+    var row = document.createElement('div');
+    row.className = 'mix-row';
+    row.innerHTML = '<select aria-label="Cuenta"></select><input type="text" inputmode="decimal" autocomplete="off" placeholder="0.00" aria-label="Monto">' +
+      '<button type="button" class="mini" data-mix="del" aria-label="Quitar">' + icon('i-x') + '</button>';
+    fillSelect(row.querySelector('select'), mixAccountOptions(m.opts.currency()), accId || '');
+    if (amount) row.querySelector('input').value = amount;
+    m.box.querySelector('.mix-rows').appendChild(row);
+    return row;
+  }
+  function mixRows(m) {
+    return $$('.mix-row', m.box).map(function (r) { return { row: r, accountId: r.querySelector('select').value, amount: num(r.querySelector('input').value) || 0 }; });
+  }
+  function mixShow(m) {
+    m.lab.classList.toggle('mix-hide', m.on);
+    m.box.querySelector('.mix-on').classList.toggle('hidden', m.on);
+    m.box.querySelector('.mix-panel').classList.toggle('hidden', !m.on);
+    if (!m.on) m.box.querySelector('.mix-rows').innerHTML = '';
+  }
+  function mixOn(m) {
+    if (!m || m.on) return;
+    var cur = m.opts.currency(), first = m.sel.value;
+    var other = state.accounts.filter(function (ac) { return C.samePeg(ac.currency, cur) && ac.id !== first; })[0];
+    m.on = true; m.touched = false;
+    m.box.querySelector('.mix-rows').innerHTML = '';
+    mixRow(m, first, 0); var r2 = mixRow(m, other ? other.id : '', 0);
+    mixShow(m); mixSync(m);
+    r2.querySelector('input').focus();
+  }
+  /** Vuelve a una sola cuenta: la de la primera parte con cuenta. */
+  function mixOff(m) {
+    if (!m || !m.on) return;
+    var keep = mixRows(m).filter(function (r) { return r.accountId; })[0];
+    if (keep) m.sel.value = keep.accountId;
+    m.on = false; mixShow(m);
+  }
+  function mixReset(m) { if (m) { m.on = false; mixShow(m); } }
+  /** Muestra un reparto guardado (2 o más cuentas); si no hay, una sola cuenta. */
+  function mixSet(m, splits) {
+    if (!m) return;
+    mixReset(m);
+    if (!splits || splits.length < 2) return;
+    m.on = true; m.touched = true;
+    splits.forEach(function (s) { mixRow(m, s.accountId, s.amount); });
+    mixShow(m); mixSync(m);
+  }
+  /** Opciones de cuenta según la moneda actual (al cambiar la moneda del formulario). */
+  function mixRefill(m) {
+    if (!m || !m.on) return;
+    $$('.mix-row select', m.box).forEach(function (s) { fillSelect(s, mixAccountOptions(m.opts.currency()), s.value); });
+  }
+  /** La primera parte se queda con lo que falte hasta que la escribas a mano; muestra cuánto falta repartir. */
+  function mixSync(m) {
+    if (!m || !m.on) return;
+    var total = C.round(m.opts.total() || 0, 2), rows = mixRows(m), cur = m.opts.currency();
+    if (!m.touched && rows.length) {
+      var rest = C.round(total - C.sum(rows.slice(1).map(function (r) { return r.amount; })), 2);
+      rows[0].row.querySelector('input').value = rest > 0 ? rest : '';
+      rows[0].amount = rest > 0 ? rest : 0;
+    }
+    var ck = C.checkSplits(rows, total), n2 = function (v) { return fmtNum(v, 2, 2) + ' ' + cur; };
+    m.box.querySelector('.mix-title').textContent = mixLabel(m) + ' · total ' + n2(total);
+    var st = m.box.querySelector('.mix-status');
+    st.className = 'mix-status ' + (ck.error ? 'down' : 'up');
+    st.textContent = ck.error === 'cuenta' ? 'Elige la cuenta de cada monto' : ck.remaining > 0 ? 'Falta repartir ' + n2(ck.remaining)
+      : ck.remaining < 0 ? 'Te pasas por ' + n2(-ck.remaining) : '✓ Repartido';
+  }
+  /** Para guardar: null (una sola cuenta: usar el selector) · { accountId, splits } · { error }. */
+  function mixRead(m) {
+    if (!m || !m.on) return null;
+    var ck = C.checkSplits(mixRows(m), C.round(m.opts.total() || 0, 2)), cur = m.opts.currency();
+    if (ck.error === 'cuenta') return { error: 'Pago mixto: elige la cuenta de cada monto' };
+    if (ck.error) return { error: 'Pago mixto: ' + (ck.remaining > 0 ? 'falta repartir ' : 'el reparto se pasa por ') + fmtNum(Math.abs(ck.remaining), 2, 2) + ' ' + cur };
+    return { accountId: ck.list.length ? ck.list[0].accountId : null, splits: ck.mixed ? ck.list : null };
+  }
+  /** Cuenta(s) del pago que se registra en la tarjeta de cobros/pagos. */
+  function payTarget(f) {
+    var mx = mixRead(payMix);
+    return mx || { accountId: f.accountId.value || null, splits: null };
+  }
+  function withSplits(obj, t) { if (t.splits) obj.splits = t.splits; return obj; }
+  /** «Zelle» o, si fue mixto, «Zelle USD 60.00 + Efectivo USD 40.00». */
+  function payAccText(pm, cur) {
+    var list = C.paySplits(pm);
+    if (!list.length) return 'sin cuenta';
+    if (list.length === 1) return esc(accName(list[0].accountId));
+    return list.map(function (s) { var ac = account(s.accountId); return esc(accName(s.accountId)) + ' ' + fmtMoney(s.amount, ac ? ac.currency : cur); }).join(' + ');
+  }
+  function bindMix() {
+    var pf = $('#pay-form'), fx = $('#fx-form'), sf = $('#sale-form');
+    payMix = mixInit(pf.accountId, { total: function () { return num(pf.amount.value); }, currency: function () { return pf.dataset.cur || base(); } });
+    fxInMix = mixInit(fx.inAccountId, { total: function () { return C.exchangeQuote(fxDraft(), rates()).received; }, currency: function () { return fx.inCurrency.value; } });
+    fxOutMix = mixInit(fx.outAccountId, { total: function () { return num(fx.delivered.value); }, currency: function () { return fx.outCurrency.value; } });
+    saleMix = mixInit(sf.accountId, { total: function () { return C.round((sf.quantity.value.trim() ? num(sf.quantity.value) : 1) * num(sf.unitPrice.value), 2); }, currency: function () { return sf.currency.value; } });
+    var all = [payMix, fxInMix, fxOutMix, saleMix];
+    document.addEventListener('click', function (e) {
+      var b = e.target.closest('[data-mix]'); if (!b) return;
+      var m = b.closest('.mix-box')._mix, act = b.dataset.mix;
+      if (act === 'on') mixOn(m);
+      else if (act === 'off') mixOff(m);
+      else if (act === 'add') {
+        var ck = C.checkSplits(mixRows(m), m.opts.total() || 0);
+        m.touched = true;
+        var r = mixRow(m, '', ck.remaining > 0 ? ck.remaining : 0); mixSync(m); r.querySelector('select').focus();
+      } else if (act === 'del') {
+        b.closest('.mix-row').remove();
+        if (mixRows(m).length < 2) mixOff(m); else mixSync(m);
+      }
+    });
+    [pf, fx, sf].forEach(function (form) {
+      form.addEventListener('input', function (e) {
+        var row = e.target.closest('.mix-row');
+        all.forEach(function (m) {
+          if (m.box.parentNode && form.contains(m.box)) {
+            if (row && m.box.contains(row) && e.target.tagName === 'INPUT' && row === m.box.querySelector('.mix-row')) m.touched = true;
+            mixSync(m);
+          }
+        });
+      });
+      form.addEventListener('change', function (e) {
+        all.forEach(function (m) {
+          if (!form.contains(m.box)) return;
+          if (/currency/i.test(e.target.name || '')) mixRefill(m);
+          mixSync(m);
+        });
+      });
+    });
   }
 
   // ================================================================ comprobantes y WhatsApp
@@ -2934,6 +3108,7 @@
     fillSelect(f.categoryId, saleCategoryOptions(), last.saleCategoryId || (saleCategoryOptions().filter(function (o) { return o.label === 'Ventas'; })[0] || {}).value || '');
     f.date.value = S.today(); f.quantity.value = '1';
     renderSaleAccounts();
+    mixReset(saleMix);
     $('#sale-form-title').textContent = 'Nueva venta';
     $('[data-action="cancel-sale"]').classList.add('hidden');
     $('[data-action="delete-sale"]').classList.add('hidden'); rcptFormBtn('sale', false);
@@ -2953,6 +3128,7 @@
     f.date.value = sv.date; f.dueDate.value = sv.dueDate || ''; f.note.value = sv.note || '';
     fillSelect(f.categoryId, saleCategoryOptions(), sv.categoryId || '');
     renderSaleAccounts(); f.accountId.value = sv.accountId || '';
+    mixSet(saleMix, sv.mode === 'contado' ? sv.splits : null);
     $('#sale-form-title').textContent = 'Editar venta';
     $('[data-action="cancel-sale"]').classList.remove('hidden');
     $('[data-action="delete-sale"]').classList.remove('hidden'); rcptFormBtn('sale', true);
@@ -2973,10 +3149,13 @@
     if (existing && amount < paidBefore) { toast('El total no puede ser menor a lo ya cobrado (' + fmtMoney(paidBefore, existing.currency) + ')'); return; }
     var down = !existing && mode === 'credito' ? (num(f.downPayment.value) || 0) : 0;
     if (down < 0 || down > amount) { toast('El abono inicial no puede superar el total'); return; }
+    var mxS = mode === 'contado' ? mixRead(saleMix) : null;
+    if (mxS && mxS.error) { toast(mxS.error); return; }
     var data = { date: f.date.value, client: f.client.value.trim(), concept: f.concept.value.trim(), quantity: C.round(q, 6), unitPrice: C.round(pr, 8),
       amount: amount, currency: existing && (existing.payments || []).length ? existing.currency : f.currency.value,
       categoryId: f.categoryId.value || ventasCategoryId(), mode: mode,
-      accountId: mode === 'contado' ? (f.accountId.value || null) : null, dueDate: mode === 'credito' ? (f.dueDate.value || null) : null, note: f.note.value.trim() };
+      accountId: mode === 'contado' ? (mxS ? mxS.accountId : (f.accountId.value || null)) : null, splits: mxS ? mxS.splits : null,
+      dueDate: mode === 'credito' ? (f.dueDate.value || null) : null, note: f.note.value.trim() };
     invalidateSnapshots(existing && existing.date < data.date ? existing.date : data.date);
     var last = state.settings.last;
     last.saleCurrency = data.currency; last.saleCategoryId = data.categoryId;
@@ -3317,6 +3496,7 @@
     f.status.value = 'completada';
     fillSelect(f.inAccountId, accountsFor(f.inCurrency.value, 'Ninguna (no la registro)'), last.fxInAcc || '');
     fillSelect(f.outAccountId, accountsFor(f.outCurrency.value, 'Ninguna (no la registro)'), last.fxOutAcc || '');
+    mixReset(fxInMix); mixReset(fxOutMix);
     setMarketRate();
     $('#fx-form-title').textContent = 'Nuevo cambio';
     $('#fx-settle-hint').classList.add('hidden');
@@ -3340,6 +3520,7 @@
     f.comMode.value = x.commission.mode; f.comValue.value = x.commission.value; f.comCharge.value = x.commission.charge;
     if (x.commission.currency) fillSelect(f.comCurrency, currencyOptions(), x.commission.currency);
     f.delivered.value = x.delivered; f.dataset.deliveredTouched = '1';
+    mixSet(fxInMix, x.inSplits); mixSet(fxOutMix, x.outSplits);
     f.note.value = x.note || '';
     (x.costs || []).forEach(fxCostRow);
     $('#fx-form-title').textContent = 'Editar cambio';
@@ -3352,9 +3533,9 @@
       var sideAcc = st.side === 'in' ? x.inAccountId : x.outAccountId;
       var sets = x.settlements || [];
       if (sets.length) hint.innerHTML += '<br><span class="small">' + sets.map(function (z) {
-        return (st.side === 'in' ? 'Cobro ' : 'Entrega ') + fmtMoney(z.amount, st.currency) + ' el ' + fmtDate(z.date) + ' · ' + (z.accountId ? esc(accName(z.accountId)) : 'sin cuenta');
+        return (st.side === 'in' ? 'Cobro ' : 'Entrega ') + fmtMoney(z.amount, st.currency) + ' el ' + fmtDate(z.date) + ' · ' + payAccText(z, st.currency);
       }).join('<br>') + '</span>';
-      var wrong = sets.filter(function (z) { return z.accountId !== sideAcc; });
+      var wrong = sets.filter(function (z) { return !(z.splits && z.splits.length) && z.accountId !== sideAcc; });   // los mixtos son a propósito
       if (sideAcc && wrong.length) {
         hint.innerHTML += '<br><b>Ojo:</b> ' + (wrong.length === sets.length ? 'los registros usan' : wrong.length + ' registro(s) usan') + ' otra cuenta que «' +
           (st.side === 'in' ? 'Entra en' : 'Sale de') + ': ' + esc(accName(sideAcc)) + '». ' +
@@ -3380,6 +3561,9 @@
     if (!(delivered > 0)) { toast('Indica el monto a entregar'); f.delivered.focus(); return; }
     if (!f.date.value) { toast('Elige la fecha'); return; }
     var costs = gatherCosts();
+    var mxIn = mixRead(fxInMix), mxOut = mixRead(fxOutMix);
+    if (mxIn && mxIn.error) { toast('Entra en · ' + mxIn.error); return; }
+    if (mxOut && mxOut.error) { toast('Sale de · ' + mxOut.error); return; }
     var existing = f.editId.value ? byId(state.exchanges, f.editId.value) : null;
     var curs = [x.inCurrency, x.outCurrency, x.commission.currency].concat(costs.map(function (c) { return c.currency; }));
     var data = {
@@ -3387,7 +3571,8 @@
       amount: C.round(x.amount, 2), inCurrency: x.inCurrency, outCurrency: x.outCurrency, rate: C.round(x.rate, 10), rateInv: rateInv(),
       commission: { mode: x.commission.mode, value: x.commission.value, currency: x.commission.mode === 'fijo' ? x.commission.currency : null, charge: x.commission.charge },
       commissionAmount: q.commission, received: q.received, delivered: C.round(delivered, 2),
-      inAccountId: f.inAccountId.value || null, outAccountId: f.outAccountId.value || null,
+      inAccountId: mxIn ? mxIn.accountId : (f.inAccountId.value || null), outAccountId: mxOut ? mxOut.accountId : (f.outAccountId.value || null),
+      inSplits: mxIn ? mxIn.splits : null, outSplits: mxOut ? mxOut.splits : null,
       costs: costs, note: f.note.value.trim(),
       snapshot: snapshotRates(curs, existing ? existing.snapshot : null) // tasas fijadas al registrar: la ganancia no cambia después
     };
@@ -3397,7 +3582,7 @@
       var side = existing.settleSide || (existing.status === 'pendiente_cobro' ? 'in' : 'out');
       // Si cambiaste la cuenta de ese lado, los registros que usaban la cuenta anterior pasan a la nueva
       var oldAcc = side === 'in' ? existing.inAccountId : existing.outAccountId, newAcc = side === 'in' ? data.inAccountId : data.outAccountId;
-      if (newAcc && oldAcc !== newAcc) existing.settlements.forEach(function (z) { if (!z.accountId || z.accountId === oldAcc) z.accountId = newAcc; });
+      if (newAcc && oldAcc !== newAcc) existing.settlements.forEach(function (z) { if (!(z.splits && z.splits.length) && (!z.accountId || z.accountId === oldAcc)) z.accountId = newAcc; });
       var probe = Object.assign({}, existing, data, { status: 'completada', settleSide: side });
       var pst = C.exchangeSettlement(probe);
       // Elegiste «Completado» pero falta algo: se registra lo que falta (hoy, en la cuenta del formulario)
@@ -3500,12 +3685,15 @@
     });
     S.download('por_cobrar_pagar_' + S.today() + '.csv', S.toCSV(['tipo', 'persona', 'concepto', 'fecha', 'vence', 'monto', 'moneda', 'abonado', 'pendiente', 'estado', 'cuenta_inicial', 'abonos', 'nota'], rows), 'text/csv');
   }
+  function splitsText(list) {
+    return list.map(function (s) { return accName(s.accountId) + (list.length > 1 ? ' ' + s.amount : ''); }).join(' + ');
+  }
   function exportFxCSV() {
     var b = base();
     var rows = state.exchanges.slice().sort(function (a, c) { return a.date < c.date ? -1 : 1; }).map(function (x) {
       var pr = C.exchangeProfit(x, rates());
-      return [x.date, x.client || '', x.status, x.amount, x.inCurrency, x.received, x.inAccountId ? accName(x.inAccountId) : '', x.rate, x.delivered, x.outCurrency,
-        x.outAccountId ? accName(x.outAccountId) : '', x.commission.mode, x.commission.value, x.commissionAmount, x.commission.charge,
+      return [x.date, x.client || '', x.status, x.amount, x.inCurrency, x.received, splitsText(C.fxSplits(x, 'in')), x.rate, x.delivered, x.outCurrency,
+        splitsText(C.fxSplits(x, 'out')), x.commission.mode, x.commission.value, x.commissionAmount, x.commission.charge,
         (x.costs || []).map(function (c) { return (c.concept || 'costo') + ' ' + c.amount + ' ' + c.currency; }).join(' | '), pr.commission, pr.spread, pr.costs, pr.profit, b, x.note || ''];
     });
     S.download('cambios_divisas_' + S.today() + '.csv', S.toCSV(['fecha', 'cliente', 'estado', 'monto_a_cambiar', 'moneda_recibida', 'recibido', 'cuenta_entrada', 'tasa', 'entregado', 'moneda_entregada',
@@ -3533,14 +3721,17 @@
   function accountMoves(id) {
     var out = [];
     var push = function (date, title, sub, amount, extra) { out.push({ date: date, title: title, sub: sub, amount: amount, extra: extra || '' }); };
+    var mine = function (pm) { return C.splitAmount(C.paySplits(pm), id); };   // parte de esta cuenta (pagos mixtos)
+    var mixNote = function (pm, txt) { return pm.splits && pm.splits.length > 1 ? (txt ? txt + ' · ' : '') + 'pago mixto' : txt; };
+    var ai, ao, as;
     (state.sales || []).forEach(function (sv) {
-      if (sv.mode === 'contado' && sv.accountId === id) push(sv.date, 'Venta' + (sv.client ? ' · ' + sv.client : ''), sv.concept || '', Number(sv.amount));
-      (sv.payments || []).forEach(function (pm) { if (pm.accountId === id) push(pm.date, 'Cobro de venta' + (sv.client ? ' · ' + sv.client : ''), sv.concept || '', Number(pm.amount)); });
+      if (sv.mode === 'contado' && (as = C.splitAmount(C.splitsOf(sv.splits, sv.accountId, sv.amount), id))) push(sv.date, 'Venta' + (sv.client ? ' · ' + sv.client : ''), mixNote(sv, sv.concept || ''), as);
+      (sv.payments || []).forEach(function (pm) { var v = mine(pm); if (v) push(pm.date, 'Cobro de venta' + (sv.client ? ' · ' + sv.client : ''), mixNote(pm, sv.concept || ''), v); });
     });
     (state.loans || []).forEach(function (l) {
       var rec = l.kind === 'recibido';
       if (l.accountId === id) push(l.date, (rec ? 'Préstamo de ' : 'Préstamo a ') + (l.person || ''), '', rec ? Number(l.principal) : -l.principal);
-      (l.payments || []).forEach(function (pm) { if (pm.accountId === id) push(pm.date, (rec ? 'Pago de préstamo a ' : 'Pago recibido de ') + (l.person || ''), pm.note || '', rec ? -pm.amount : Number(pm.amount)); });
+      (l.payments || []).forEach(function (pm) { var v = mine(pm); if (v) push(pm.date, (rec ? 'Pago de préstamo a ' : 'Pago recibido de ') + (l.person || ''), mixNote(pm, pm.note || ''), rec ? -v : v); });
     });
     state.transactions.forEach(function (t) {
       if (t.type === 'transferencia') {
@@ -3559,18 +3750,19 @@
     state.exchanges.forEach(function (x) {
       var xs = C.exchangeSettlement(x);
       (x.settlements || []).forEach(function (s) {
-        if (s.accountId === id && xs) push(s.date, xs.side === 'in' ? 'Cobro de cambio · ' + (x.client || 'cliente') : 'Entrega de cambio · ' + (x.client || 'cliente'), s.note || '', xs.side === 'in' ? Number(s.amount) : -s.amount);
+        var v = mine(s);
+        if (v && xs) push(s.date, xs.side === 'in' ? 'Cobro de cambio · ' + (x.client || 'cliente') : 'Entrega de cambio · ' + (x.client || 'cliente'), mixNote(s, s.note || ''), xs.side === 'in' ? v : -v);
       });
       if (xs && xs.side === 'in') { /* lo recibido entra con cada cobro */ }
-      else if (x.inAccountId === id && x.status !== 'pendiente_cobro') push(x.date, 'Cambio · recibido de ' + (x.client || 'cliente'), fmtMoney(x.received, x.inCurrency) + ' → ' + fmtMoney(x.delivered, x.outCurrency), Number(x.received));
+      else if (x.status !== 'pendiente_cobro' && (ai = C.splitAmount(C.fxSplits(x, 'in'), id))) push(x.date, 'Cambio · recibido de ' + (x.client || 'cliente'), fmtMoney(x.received, x.inCurrency) + ' → ' + fmtMoney(x.delivered, x.outCurrency) + ((x.inSplits || []).length > 1 ? ' · pago mixto' : ''), ai);
       if (xs && xs.side === 'out') { /* lo entregado sale con cada entrega */ }
-      else if (x.outAccountId === id && x.status !== 'pendiente_entrega') push(x.date, 'Cambio · entregado a ' + (x.client || 'cliente'), fmtMoney(x.received, x.inCurrency) + ' → ' + fmtMoney(x.delivered, x.outCurrency), -x.delivered);
+      else if (x.status !== 'pendiente_entrega' && (ao = C.splitAmount(C.fxSplits(x, 'out'), id))) push(x.date, 'Cambio · entregado a ' + (x.client || 'cliente'), fmtMoney(x.received, x.inCurrency) + ' → ' + fmtMoney(x.delivered, x.outCurrency) + ((x.outSplits || []).length > 1 ? ' · pago mixto' : ''), -ao);
       (x.costs || []).forEach(function (c) { if (c.accountId === id) push(x.date, 'Costo de cambio', c.concept || '', -c.amount); });
     });
     state.debts.forEach(function (d) {
       var c = d.kind === 'cobrar';
       if (d.accountId === id) push(d.date, (c ? 'Préstamo a ' : 'Préstamo de ') + d.person, d.concept || '', c ? -d.amount : Number(d.amount));
-      (d.payments || []).forEach(function (pm) { if (pm.accountId === id) push(pm.date, (c ? 'Cobro de ' : 'Pago a ') + d.person, d.concept || '', c ? Number(pm.amount) : -pm.amount); });
+      (d.payments || []).forEach(function (pm) { var v = mine(pm); if (v) push(pm.date, (c ? 'Cobro de ' : 'Pago a ') + d.person, mixNote(pm, d.concept || ''), c ? v : -v); });
     });
     return out.sort(function (a, c) { return a.date < c.date ? 1 : a.date > c.date ? -1 : 0; });
   }
@@ -4149,6 +4341,7 @@
     });
     $('#privacy-on-open').checked = !!uiPrefs().privacyOnOpen;
     $('#privacy-on-open').addEventListener('change', function (e) { setUiPref('privacyOnOpen', e.target.checked); });
+    bindMix();
     bindLook();
     bindReceipts();
     bindGestures();
@@ -4372,7 +4565,7 @@
         var fxx = byId(state.exchanges, d.id), fst = fxx && C.exchangeSettlement(fxx);
         if (fst) {
           var acc2 = fst.side === 'in' ? fxx.inAccountId : fxx.outAccountId;
-          (fxx.settlements || []).forEach(function (z) { if (z.accountId !== acc2) { invalidateSnapshots(z.date); z.accountId = acc2; } });
+          (fxx.settlements || []).forEach(function (z) { if (!(z.splits && z.splits.length) && z.accountId !== acc2) { invalidateSnapshots(z.date); z.accountId = acc2; } });
           persist(); editFx(fxx.id);
           toast((fst.side === 'in' ? 'Cobros movidos a ' : 'Entregas movidas a ') + accName(acc2));
         }

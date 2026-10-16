@@ -7,7 +7,7 @@
  * archivos de versiones distintas y la app quedaba en blanco.
  * Precios, tasas y la nube van siempre a la red: nunca se guardan aquí.
  * ========================================================================= */
-var CACHE = 'mis-finanzas-v18';
+var CACHE = 'mis-finanzas-v19';
 var SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/styles.css',
   'js/config.js', 'js/calc.js', 'js/store.js', 'js/prices.js', 'js/charts.js', 'js/advisor.js', 'js/insights.js', 'js/voice.js', 'js/backups.js', 'js/sync.js', 'js/receipt.js', 'js/app.js',
