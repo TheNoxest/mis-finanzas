@@ -103,8 +103,13 @@
   function matches(t, opts) {
     if (!inRange(t, opts.from, opts.to)) return false;
     if (opts.categoryId && t.categoryId !== opts.categoryId) return false;
-    if (opts.accountId && t.accountId !== opts.accountId) return false;
+    if (opts.accountId && t.accountId !== opts.accountId && !(t.splits || []).some(function (s) { return s.accountId === opts.accountId; })) return false;
     return true;
+  }
+  /** Monto de un ingreso/gasto; filtrando por cuenta, solo la parte de esa cuenta si fue mixto. */
+  function txAmount(t, opts) {
+    if (opts && opts.accountId && t.splits && t.splits.length) return splitAmount(t.splits, opts.accountId);
+    return Number(t.amount);
   }
 
   // ---------- Fechas (en UTC para no depender de la zona horaria) ----------
@@ -173,7 +178,7 @@
     transactions.forEach(function (t) {
       if (t.type !== 'ingreso' && t.type !== 'egreso') return;
       if (!matches(t, opts)) return;
-      var v = toBase(t.amount, t.currency, rates);
+      var v = toBase(txAmount(t, opts), t.currency, rates);
       if (isNaN(v)) { missing[t.currency] = true; return; }
       (t.type === 'ingreso' ? inc : exp).push(v);
     });
@@ -195,7 +200,7 @@
     var map = {};
     transactions.forEach(function (t) {
       if (t.type !== type || !matches(t, opts)) return;
-      var v = toBase(t.amount, t.currency, rates);
+      var v = toBase(txAmount(t, opts), t.currency, rates);
       if (isNaN(v)) return;
       (map[t.categoryId] = map[t.categoryId] || []).push(v);
     });
@@ -272,8 +277,10 @@
       if (inRange(item, opts.from, opts.to)) (amount >= 0 ? m.inflow : m.outflow).push(Math.abs(amount));
     }
     state.transactions.forEach(function (t) {
-      if (t.type === 'ingreso') add(t.accountId, Number(t.amount), t);
-      else if (t.type === 'egreso') add(t.accountId, -Number(t.amount), t);
+      if (t.type === 'ingreso' || t.type === 'egreso') {
+        var sg = t.type === 'ingreso' ? 1 : -1;
+        splitsOf(t.splits, t.accountId, t.amount).forEach(function (s) { add(s.accountId, sg * Number(s.amount), t); });
+      }
       else if (t.type === 'transferencia') {
         add(t.fromAccountId, -Number(t.amount), t);
         add(t.toAccountId, Number(t.toAmount), t);
@@ -304,12 +311,12 @@
     // Préstamos: el capital sale (presté) o entra (me prestaron); cada pago entra o sale
     (state.loans || []).forEach(function (l) {
       var sign = l.kind === 'recibido' ? 1 : -1;
-      if (l.accountId) add(l.accountId, sign * Number(l.principal), l);
+      splitsOf(l.splits, l.accountId, l.principal).forEach(function (s) { add(s.accountId, sign * Number(s.amount), l); });
       (l.payments || []).forEach(function (pm) { paySplits(pm).forEach(function (s) { add(s.accountId, -sign * Number(s.amount), pm); }); });
     });
     (state.debts || []).forEach(function (d) {
       var sign = d.kind === 'cobrar' ? 1 : -1;
-      if (d.accountId) add(d.accountId, -sign * Number(d.amount), d);
+      splitsOf(d.splits, d.accountId, d.amount).forEach(function (s) { add(s.accountId, -sign * Number(s.amount), d); });
       (d.payments || []).forEach(function (pm) { paySplits(pm).forEach(function (s) { add(s.accountId, sign * Number(s.amount), pm); }); });
     });
     return state.accounts.map(function (a) {
@@ -608,6 +615,43 @@
     var pending = round(total - paid, 2);
     return { side: side, currency: side === 'in' ? x.inCurrency : x.outCurrency, total: total, paid: paid,
       pending: pending > 0 ? pending : 0, status: pending <= 0 ? 'pagada' : paid > 0 ? 'parcial' : 'pendiente' };
+  }
+
+  // =================================================================== Buscador de Por cobrar / Por pagar
+  var SOURCE_NAME = { deuda: 'deuda prestamo', venta: 'venta', prestamo: 'prestamo', cambio: 'cambio divisas' };
+  /**
+   * Filtra pendientes (items de thirdParty) por lo escrito: cada palabra debe coincidir (Y).
+   *  - Texto: persona, concepto, tipo (venta, préstamo, cambio, deuda), moneda, fechas (dd/mm/aaaa) y «vencida».
+   *  - Número: el pendiente o el total empieza por esas cifras («150», «1.200,50»).
+   *  - «>100», «<50», «>=100»: compara el pendiente (o el total si está saldada).
+   */
+  function searchItems(items, q) {
+    var tokens = personKey(String(q || '').replace(/([<>]=?)\s+/g, '$1')).length ? String(q).trim().replace(/([<>]=?)\s+/g, '$1').split(/\s+/) : [];
+    if (!tokens.length) return items.slice();
+    var dmy = function (iso) { var p = String(iso || '').split('-'); return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0] : ''; };
+    return items.filter(function (it) {
+      var amt = it.status === 'pagada' ? Number(it.total) : Number(it.pending);
+      var hay = personKey([it.person, it.concept, SOURCE_NAME[it.source] || it.source, it.currency, it.overdue ? 'vencida vencido' : '',
+        it.status === 'pagada' ? 'saldada pagada' : it.status === 'parcial' ? 'parcial' : 'pendiente'].join(' ')) + ' ' + dmy(it.date) + ' ' + dmy(it.dueDate);
+      return tokens.every(function (tk) {
+        var cmp = /^([<>]=?)(.+)$/.exec(tk);
+        if (cmp) {
+          var v = parseNum(cmp[2]);
+          if (isNaN(v)) return false;
+          return cmp[1] === '>' ? amt > v : cmp[1] === '>=' ? amt >= v : cmp[1] === '<' ? amt < v : amt <= v;
+        }
+        if (/^[\d.,]+$/.test(tk) && tk.indexOf('/') < 0) {
+          var n = parseNum(tk);
+          if (!isNaN(n)) {
+            var digits = String(n).replace('.', '');
+            var starts = function (x) { return String(round(Number(x) || 0, 2)).replace('.', '').indexOf(digits) === 0; };
+            if (starts(it.pending) || starts(it.total)) return true;
+          }
+        }
+        if (tk.indexOf('/') >= 0) return hay.indexOf(tk) >= 0;
+        return hay.indexOf(personKey(tk)) >= 0;
+      });
+    });
   }
 
   // =================================================================== Clientes (personas)
@@ -982,7 +1026,7 @@
     months.forEach(function (m) { acc[m] = { inc: [], exp: [] }; });
     transactions.forEach(function (t) {
       if ((t.type !== 'ingreso' && t.type !== 'egreso') || !matches(t, opts)) return;
-      var v = toBase(t.amount, t.currency, rates);
+      var v = toBase(txAmount(t, opts), t.currency, rates);
       var bucket = acc[t.date.slice(0, 7)];
       if (!bucket || isNaN(v)) return;
       (t.type === 'ingreso' ? bucket.inc : bucket.exp).push(v);
@@ -1086,6 +1130,7 @@
     saleBalance: saleBalance, PERIODS: PERIODS, addPeriod: addPeriod, loanSchedule: loanSchedule, loanPaymentSplit: loanPaymentSplit, loanStatus: loanStatus,
     flowTransactions: flowTransactions,
     samePeg: samePeg,
+    searchItems: searchItems, txAmount: txAmount,
     splitsOf: splitsOf, paySplits: paySplits, fxSplits: fxSplits, splitAmount: splitAmount, checkSplits: checkSplits,
     transferFee: transferFee,
     parseAmount: parseAmount, parseNum: parseNum,

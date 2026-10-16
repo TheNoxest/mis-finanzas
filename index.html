@@ -243,6 +243,11 @@
               <input type="radio" name="debt-filter" id="df-all" value="all"><label for="df-all">Todas</label>
             </div>
           </div>
+          <div class="search" role="search" style="margin:0 0 6px">
+            <svg class="ic"><use href="#i-search"/></svg>
+            <input id="debt-search" type="search" placeholder="Buscar persona, concepto o monto…" autocomplete="off" aria-label="Buscar en la lista">
+          </div>
+          <p class="hint small hidden" id="debt-search-info" style="margin:0 0 6px"></p>
           <ul class="list" id="debt-list"></ul>
         </div>
 

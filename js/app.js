@@ -139,11 +139,12 @@
            state.exchanges.some(function (x) { return x.inCurrency === code || x.outCurrency === code; });
   }
   function accountInUse(id) {
-    return state.transactions.some(function (t) { return t.accountId === id || t.fromAccountId === id || t.toAccountId === id; }) ||
+    var spl = function (r) { return (r.splits || []).some(function (s) { return s.accountId === id; }); };
+    return state.transactions.some(function (t) { return t.accountId === id || t.fromAccountId === id || t.toAccountId === id || spl(t); }) ||
            state.investments.some(function (i) { return i.accountId === id; }) ||
-           state.debts.some(function (d) { return d.accountId === id || paysUse(d.payments, id); }) ||
+           state.debts.some(function (d) { return d.accountId === id || spl(d) || paysUse(d.payments, id); }) ||
            (state.sales || []).some(function (sv) { return C.splitAmount(C.splitsOf(sv.splits, sv.accountId, sv.amount), id) || sv.accountId === id || paysUse(sv.payments, id); }) ||
-           (state.loans || []).some(function (l) { return l.accountId === id || paysUse(l.payments, id); }) ||
+           (state.loans || []).some(function (l) { return l.accountId === id || spl(l) || paysUse(l.payments, id); }) ||
            state.exchanges.some(function (x) {
              return C.fxSplits(x, 'in').concat(C.fxSplits(x, 'out')).some(function (s) { return s.accountId === id; }) ||
                x.inAccountId === id || x.outAccountId === id || paysUse(x.settlements, id) || (x.costs || []).some(function (c) { return c.accountId === id; });
@@ -399,7 +400,7 @@
       av = '<span class="avatar ' + (isIn ? 'in' : 'out') + '">' + icon(isIn ? 'i-in' : 'i-out') + '</span>';
       title = esc(catName(t.categoryId));
       var m = methodName(t.methodId);
-      sub = fmtDate(t.date) + ' · ' + esc(accName(t.accountId)) + (m ? ' · ' + esc(m) : '');
+      sub = fmtDate(t.date) + ' · ' + (t.splits && t.splits.length > 1 ? payAccText(t, t.currency) : esc(accName(t.accountId))) + (m ? ' · ' + esc(m) : '');
       right = '<span class="' + (isIn ? 'up' : '') + '">' + (isIn ? '+' : '−') + fmtMoney(t.amount, t.currency) + '</span>' +
         (t.currency !== b ? '<div class="sub">≈ ' + fmtMoney(C.toBase(t.amount, t.currency, rates()), b) + '</div>' : '');
     }
@@ -417,10 +418,10 @@
     var list = sortedTx().filter(function (t) {
       if (type && t.type !== type) return false;
       if (ym && (t.date < range.from || t.date > range.to)) return false;
-      if (acc && t.accountId !== acc && t.fromAccountId !== acc && t.toAccountId !== acc) return false;
+      if (acc && t.accountId !== acc && t.fromAccountId !== acc && t.toAccountId !== acc && !(t.splits || []).some(function (s) { return s.accountId === acc; })) return false;
       return true;
     });
-    var s = C.summarizeTransactions(list, rates());
+    var s = C.summarizeTransactions(list, rates(), { accountId: acc || null });   // con cuenta: solo su parte de los gastos mixtos
     var b = base();
     $('#tx-totals').innerHTML =
       '<span>Ingresos <b class="up">+' + fmtMoney(s.income, b) + '</b></span>' +
@@ -473,6 +474,7 @@
   function resetTxForm() {
     var f = $('#tx-form');
     f.editId.value = ''; f.amount.value = ''; f.note.value = ''; f.toAmount.value = '';
+    mixReset(txMix);
     f.date.value = S.today();
     $('[data-action="cancel-tx"]').classList.add('hidden');
     $('[data-action="delete-tx"]').classList.add('hidden');
@@ -503,11 +505,14 @@
         fromAccountId: from.id, toAccountId: to.id, toAmount: C.round(toAmount, 2), toCurrency: to.currency, note: f.note.value.trim() };
       state.settings.last.fromAccountId = from.id; state.settings.last.toAccountId = to.id;
     } else {
-      var acc = account(f.accountId.value);
+      var mxT = mixRead(txMix);
+      if (mxT && mxT.error) { toast(mxT.error); return; }
+      var acc = account(mxT ? mxT.accountId : f.accountId.value);
       if (!acc) { toast('Elige una cuenta'); return; }
       if (!f.categoryId.value) { toast('Crea una categoría primero (Ajustes)'); return; }
       data = { type: type, date: f.date.value, amount: C.round(amount, 2), currency: acc.currency, accountId: acc.id,
         categoryId: f.categoryId.value, methodId: f.methodId.value, note: f.note.value.trim() };
+      if (mxT && mxT.splits) data.splits = mxT.splits;   // gasto o ingreso repartido entre varias cuentas
       var last = state.settings.last;
       last.accountId = acc.id; last.methodId = data.methodId; last['cat_' + type] = data.categoryId;
     }
@@ -517,7 +522,7 @@
     if (f.editId.value) {
       var t = byId(state.transactions, f.editId.value);
       // Limpiar campos del tipo anterior antes de asignar los nuevos
-      ['accountId', 'categoryId', 'methodId', 'fromAccountId', 'toAccountId', 'toAmount', 'toCurrency'].forEach(function (k) { delete t[k]; });
+      ['accountId', 'categoryId', 'methodId', 'fromAccountId', 'toAccountId', 'toAmount', 'toCurrency', 'splits'].forEach(function (k) { delete t[k]; });
       Object.assign(t, data);
       toast('Movimiento actualizado');
     } else {
@@ -542,8 +547,10 @@
     if (t.type === 'transferencia') {
       f.fromAccountId.value = t.fromAccountId; f.toAccountId.value = t.toAccountId;
       f.toAmount.value = t.toCurrency !== t.currency || C.transferFee(t) ? t.toAmount : '';
+      mixReset(txMix);
     } else {
       f.accountId.value = t.accountId; f.categoryId.value = t.categoryId; f.methodId.value = t.methodId || '';
+      mixSet(txMix, t.splits);
     }
     $('[data-action="cancel-tx"]').classList.remove('hidden');
     $('[data-action="delete-tx"]').classList.remove('hidden');
@@ -941,7 +948,7 @@
     var b = base();
     var rows = sortedTx().reverse().map(function (t) {
       var tr = t.type === 'transferencia';
-      return [t.date, t.type, t.amount, t.currency, accName(tr ? t.fromAccountId : t.accountId),
+      return [t.date, t.type, t.amount, t.currency, tr ? accName(t.fromAccountId) : splitsText(C.splitsOf(t.splits, t.accountId, t.amount)),
         tr ? accName(t.toAccountId) : '', tr ? t.toAmount : '', tr ? t.toCurrency : '',
         rates()[t.currency], C.toBase(t.amount, t.currency, rates()), b,
         tr ? '' : catName(t.categoryId), tr ? '' : methodName(t.methodId), t.note || ''];
@@ -2359,13 +2366,22 @@
       ? open.length + ' pendiente(s)' + (overdue.length ? ' · <span class="down">' + overdue.length + ' vencida(s) por ' + fmtMoney(C.sum(overdue.map(function (i) { return i.pendingBase || 0; })), b) + '</span>' : '')
       : 'Nada pendiente';
     var filter = document.querySelector('input[name="debt-filter"]:checked').value;
-    var list = all.filter(function (i) { return filter === 'all' || (filter === 'paid' ? i.status === 'pagada' : i.status !== 'pagada'); })
+    var q = $('#debt-search').value.trim(), found = q ? C.searchItems(all, q) : all;
+    var inFilter = function (i) { return filter === 'all' || (filter === 'paid' ? i.status === 'pagada' : i.status !== 'pagada'); };
+    var list = found.filter(inFilter)
       .sort(function (a, c) {
         if (a.overdue !== c.overdue) return a.overdue ? -1 : 1;
         var da = a.dueDate || '9999', dc = c.dueDate || '9999';
         return da < dc ? -1 : da > dc ? 1 : (a.date < c.date ? 1 : -1);
       });
     $('#debt-list-title').textContent = filter === 'paid' ? 'Saldadas' : filter === 'all' ? 'Todas' : 'Pendientes';
+    var info = $('#debt-search-info'), others = found.length - list.length;
+    info.classList.toggle('hidden', !q);
+    if (q) {
+      var pend = C.sum(list.filter(function (i) { return i.status !== 'pagada'; }).map(function (i) { return i.pendingBase || 0; }));
+      info.innerHTML = plural(list.length, 'resultado', 'resultados') + (pend > 0 ? ' · pendiente ' + fmtMoney(pend, b) : '') +
+        (others > 0 ? ' · <button type="button" class="link small" data-action="debt-search-all">' + others + ' más en otras listas</button>' : '');
+    }
     var editing = $('#debt-form').editId.value;
     $('#debt-list').innerHTML = list.length ? list.map(function (it) {
       var attr = it.source === 'cambio' ? 'data-settle-fx="' + it.id + '"' : it.source === 'venta' ? 'data-pay-ref="sale|' + it.id + '"'
@@ -2380,7 +2396,8 @@
         '<div class="amt">' + fmtMoney(it.status === 'pagada' ? it.total : it.pending, it.currency) +
         (it.source === 'prestamo' && it.status !== 'pagada' ? '<div class="sub">capital ' + fmtMoney(it.capitalPending, it.currency) + '</div>'
           : it.currency !== b && it.status !== 'pagada' ? '<div class="sub">≈ ' + fmtMoney(it.pendingBase, b) + '</div>' : '') + '</div></li>';
-    }).join('') : '<li class="empty">' + (filter === 'open' ? (kind === 'cobrar' ? 'Nadie te debe nada. Registra abajo un préstamo o una venta a crédito.' : 'No debes nada. Registra abajo una deuda o compra a crédito.') : 'Sin registros.') + '</li>';
+    }).join('') : q ? '<li class="empty">Nada coincide con «' + esc(q) + '». Prueba con el nombre, el concepto, un monto (150, &gt;100) o una fecha (15/10).</li>'
+      : '<li class="empty">' + (filter === 'open' ? (kind === 'cobrar' ? 'Nadie te debe nada. Registra abajo un préstamo o una venta a crédito.' : 'No debes nada. Registra abajo una deuda o compra a crédito.') : 'Sin registros.') + '</li>';
     renderDebtPayments();
   }
 
@@ -2414,6 +2431,7 @@
     f.currency.disabled = false;
     f.date.value = S.today();
     renderDebtAccountSelect();
+    mixReset(debtMix);
     debtLabels(f.dataset.kind);
     $('[data-action="cancel-debt"]').classList.add('hidden');
     $('[data-action="delete-debt"]').classList.add('hidden'); rcptFormBtn('debt', false);
@@ -2431,6 +2449,7 @@
     f.currency.disabled = (d.payments || []).length > 0; // con abonos no se cambia la moneda
     f.date.value = d.date; f.dueDate.value = d.dueDate || ''; f.note.value = d.note || '';
     renderDebtAccountSelect(); f.accountId.value = d.accountId || '';
+    mixSet(debtMix, d.splits);
     debtLabels(d.kind);
     $('[data-action="cancel-debt"]').classList.remove('hidden');
     $('[data-action="delete-debt"]').classList.remove('hidden'); rcptFormBtn('debt', true);
@@ -2566,9 +2585,12 @@
     if (f.dueDate.value && f.dueDate.value < f.date.value) { toast('El vencimiento no puede ser anterior a la fecha'); return; }
     var existing = f.editId.value ? byId(state.debts, f.editId.value) : null;
     if (existing && amount < C.debtBalance(existing).paid) { toast('El monto no puede ser menor a lo ya abonado'); return; }
+    var mxD = mixRead(debtMix);
+    if (mxD && mxD.error) { toast(mxD.error); return; }
     var data = { kind: kind, person: f.person.value.trim(), concept: f.concept.value.trim(), amount: C.round(amount, 2),
       currency: existing && (existing.payments || []).length ? existing.currency : f.currency.value,
-      date: f.date.value, dueDate: f.dueDate.value || null, accountId: f.accountId.value || null, note: f.note.value.trim() };
+      date: f.date.value, dueDate: f.dueDate.value || null, accountId: mxD ? mxD.accountId : (f.accountId.value || null), splits: mxD ? mxD.splits : null,
+      note: f.note.value.trim() };
     invalidateSnapshots(existing && existing.date < data.date ? existing.date : data.date);
     if (existing) { Object.assign(existing, data); toast('Actualizado'); }
     else {
@@ -2717,7 +2739,7 @@
   }
 
   // ================================================================ pagos mixtos (varias cuentas)
-  var payMix = null, fxInMix = null, fxOutMix = null, saleMix = null;
+  var payMix = null, fxInMix = null, fxOutMix = null, saleMix = null, txMix = null, loanMix = null, debtMix = null;
   /** Cuentas para una parte del pago en `cur`: la misma moneda o una de igual valor (USD ↔ USDT). */
   function mixAccountOptions(cur) {
     return [{ value: '', label: 'Elige la cuenta' }].concat(state.accounts.filter(function (ac) { return C.samePeg(ac.currency, cur); })
@@ -2729,7 +2751,7 @@
    */
   function mixInit(sel, opts) {
     var lab = sel.closest('label'), box = document.createElement('div');
-    box.className = 'mix-box' + (lab.classList.contains('span2') ? ' span2' : '') + (lab.classList.contains('only-contado') ? ' only-contado' : '');
+    box.className = 'mix-box span2' + ['only-contado', 'only-flow'].filter(function (k) { return lab.classList.contains(k); }).map(function (k) { return ' ' + k; }).join('');
     box.innerHTML = '<button type="button" class="link small mix-on" data-mix="on">＋ Dividir entre varias cuentas</button>' +
       '<div class="mix-panel hidden"><div class="mix-head"><span class="mix-title"></span>' +
       '<button type="button" class="link small" data-mix="off">Una sola cuenta</button></div>' +
@@ -2833,12 +2855,16 @@
     return list.map(function (s) { var ac = account(s.accountId); return esc(accName(s.accountId)) + ' ' + fmtMoney(s.amount, ac ? ac.currency : cur); }).join(' + ');
   }
   function bindMix() {
-    var pf = $('#pay-form'), fx = $('#fx-form'), sf = $('#sale-form');
+    var pf = $('#pay-form'), fx = $('#fx-form'), sf = $('#sale-form'), tf = $('#tx-form'), lf = $('#loan-form'), dfm = $('#debt-form');
     payMix = mixInit(pf.accountId, { total: function () { return num(pf.amount.value); }, currency: function () { return pf.dataset.cur || base(); } });
     fxInMix = mixInit(fx.inAccountId, { total: function () { return C.exchangeQuote(fxDraft(), rates()).received; }, currency: function () { return fx.inCurrency.value; } });
     fxOutMix = mixInit(fx.outAccountId, { total: function () { return num(fx.delivered.value); }, currency: function () { return fx.outCurrency.value; } });
     saleMix = mixInit(sf.accountId, { total: function () { return C.round((sf.quantity.value.trim() ? num(sf.quantity.value) : 1) * num(sf.unitPrice.value), 2); }, currency: function () { return sf.currency.value; } });
-    var all = [payMix, fxInMix, fxOutMix, saleMix];
+    txMix = mixInit(tf.accountId, { total: function () { return parseAmount(tf.amount.value) || 0; },
+      currency: function () { return (account(tf.accountId.value) || {}).currency || base(); } });
+    loanMix = mixInit(lf.accountId, { total: function () { return num(lf.principal.value) || 0; }, currency: function () { return lf.currency.value; } });
+    debtMix = mixInit(dfm.accountId, { total: function () { return num(dfm.amount.value) || 0; }, currency: function () { return dfm.currency.value; } });
+    var all = [payMix, fxInMix, fxOutMix, saleMix, txMix, loanMix, debtMix];
     document.addEventListener('click', function (e) {
       var b = e.target.closest('[data-mix]'); if (!b) return;
       var m = b.closest('.mix-box')._mix, act = b.dataset.mix;
@@ -2853,7 +2879,7 @@
         if (mixRows(m).length < 2) mixOff(m); else mixSync(m);
       }
     });
-    [pf, fx, sf].forEach(function (form) {
+    [pf, fx, sf, tf, lf, dfm].forEach(function (form) {
       form.addEventListener('input', function (e) {
         var row = e.target.closest('.mix-row');
         all.forEach(function (m) {
@@ -3252,6 +3278,7 @@
     f.currency.disabled = false;
     f.date.value = S.today(); f.installments.value = '1'; f.period.value = 'mensual';
     renderLoanAccounts();
+    mixReset(loanMix);
     $('#loan-form-title').textContent = 'Nuevo préstamo';
     $('#loan-edit-hint').classList.add('hidden');
     $('[data-action="cancel-loan"]').classList.add('hidden');
@@ -3269,6 +3296,7 @@
     f.person.value = l.person || ''; f.principal.value = l.principal;
     fillSelect(f.currency, currencyOptions(), l.currency); f.currency.disabled = (l.payments || []).length > 0;
     f.date.value = l.date; renderLoanAccounts(); f.accountId.value = l.accountId || '';
+    mixSet(loanMix, l.splits);
     var it = l.interest || {};
     f.intMode.value = it.mode || 'ninguno'; f.intValue.value = it.value || ''; f.intBasis.value = it.basis || 'periodo'; f.intMethod.value = it.method || 'simple';
     f.installments.value = l.installments; f.period.value = l.period || 'mensual'; f.firstDue.value = l.firstDue || ''; f.note.value = l.note || '';
@@ -3291,6 +3319,10 @@
     if (!(d.installments >= 1 && d.installments <= 600)) { toast('El número de cuotas debe estar entre 1 y 600'); f.installments.focus(); return; }
     if (d.interest.mode !== 'ninguno' && !(d.interest.value > 0)) { toast('Escribe el ' + (d.interest.mode === 'fijo' ? 'monto' : 'porcentaje') + ' de interés o elige «Sin interés»'); f.intValue.focus(); return; }
     if (d.firstDue && d.firstDue < d.date) { toast('La primera cuota no puede ser antes de la fecha del préstamo'); return; }
+    var mxL = mixRead(loanMix);
+    if (mxL && mxL.error) { toast(mxL.error); return; }
+    if (mxL) d.accountId = mxL.accountId;
+    d.splits = mxL ? mxL.splits : null;   // capital repartido entre varias cuentas
     var existing = f.editId.value ? byId(state.loans, f.editId.value) : null;
     if (existing) {
       var paid = C.sum((existing.payments || []).map(function (p) { return p.amount; }));
@@ -3730,15 +3762,17 @@
     });
     (state.loans || []).forEach(function (l) {
       var rec = l.kind === 'recibido';
-      if (l.accountId === id) push(l.date, (rec ? 'Préstamo de ' : 'Préstamo a ') + (l.person || ''), '', rec ? Number(l.principal) : -l.principal);
+      var lp = C.splitAmount(C.splitsOf(l.splits, l.accountId, l.principal), id);
+      if (lp) push(l.date, (rec ? 'Préstamo de ' : 'Préstamo a ') + (l.person || ''), mixNote(l, ''), rec ? lp : -lp);
       (l.payments || []).forEach(function (pm) { var v = mine(pm); if (v) push(pm.date, (rec ? 'Pago de préstamo a ' : 'Pago recibido de ') + (l.person || ''), mixNote(pm, pm.note || ''), rec ? -v : v); });
     });
     state.transactions.forEach(function (t) {
       if (t.type === 'transferencia') {
         if (t.fromAccountId === id) push(t.date, 'Transferencia a ' + accName(t.toAccountId), t.note || '', -t.amount);
         if (t.toAccountId === id) push(t.date, 'Transferencia de ' + accName(t.fromAccountId), t.note || '', Number(t.toAmount));
-      } else if (t.accountId === id) {
-        push(t.date, catName(t.categoryId), t.note || '', t.type === 'ingreso' ? Number(t.amount) : -t.amount);
+      } else {
+        var tp = C.splitAmount(C.splitsOf(t.splits, t.accountId, t.amount), id);
+        if (tp) push(t.date, catName(t.categoryId), mixNote(t, t.note || ''), t.type === 'ingreso' ? tp : -tp);
       }
     });
     state.investments.forEach(function (o) {
@@ -3761,7 +3795,8 @@
     });
     state.debts.forEach(function (d) {
       var c = d.kind === 'cobrar';
-      if (d.accountId === id) push(d.date, (c ? 'Préstamo a ' : 'Préstamo de ') + d.person, d.concept || '', c ? -d.amount : Number(d.amount));
+      var dp = C.splitAmount(C.splitsOf(d.splits, d.accountId, d.amount), id);
+      if (dp) push(d.date, (c ? 'Préstamo a ' : 'Préstamo de ') + d.person, mixNote(d, d.concept || ''), c ? -dp : dp);
       (d.payments || []).forEach(function (pm) { var v = mine(pm); if (v) push(pm.date, (c ? 'Cobro de ' : 'Pago a ') + d.person, mixNote(pm, d.concept || ''), c ? v : -v); });
     });
     return out.sort(function (a, c) { return a.date < c.date ? 1 : a.date > c.date ? -1 : 0; });
@@ -4350,6 +4385,7 @@
     $('#debt-form').currency.addEventListener('change', renderDebtAccountSelect);
     $('#pay-form').addEventListener('submit', onPaySubmit);
     $$('input[name="debt-filter"]').forEach(function (r) { r.addEventListener('change', renderDebts); });
+    $('#debt-search').addEventListener('input', renderDebts);
     var fxf = $('#fx-form');
     fxf.addEventListener('submit', onFxSubmit);
     fxf.addEventListener('input', function (e) { syncFxForm(e.target.name); });
@@ -4512,6 +4548,7 @@
       if (!el) { openRow(e); return; }
       var d = el.dataset;
       if (receiptClick(d)) return;
+      if (d.action === 'debt-search-all') { $('#df-all').checked = true; renderDebts(); return; }
       if (d.goto) showView(d.goto);
       else if (d.action === 'open-search') { showView('inversiones'); setTimeout(function () { $('#asset-search').focus(); }, 0); }
       else if (d.action === 'asset-back') showView('inversiones');

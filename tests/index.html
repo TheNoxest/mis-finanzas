@@ -664,6 +664,43 @@
     eq('Saldos con pagos mixtos: Zelle 220, Efectivo 160, Binance 350, Binance 2 406', mixBal, { zelle: 220, cash: 160, bin: 350, bin2: 406 });
     eq('Parte de una cuenta en un reparto', C.splitAmount(C.fxSplits(mixState.exchanges[0], 'out'), 'bin2'), 94);
 
+    section('Varias cuentas en gastos y préstamos; buscador de pendientes');
+    var mx2 = {
+      settings: { baseCurrency: 'USD', rates: { USD: 1, USDT: 1 } },
+      accounts: [{ id: 'z', currency: 'USD', initialBalance: 500 }, { id: 'e', currency: 'USD', initialBalance: 500 }, { id: 'b', currency: 'USDT', initialBalance: 500 }],
+      transactions: [{ id: 't1', type: 'egreso', date: '2026-10-05', amount: 90, currency: 'USD', accountId: 'z', categoryId: 'c1',
+        splits: [{ accountId: 'z', amount: 50 }, { accountId: 'e', amount: 40 }] },
+        { id: 't2', type: 'ingreso', date: '2026-10-06', amount: 30, currency: 'USD', accountId: 'e', categoryId: 'c2' }],
+      investments: [], exchanges: [], sales: [],
+      loans: [{ id: 'l', kind: 'otorgado', person: 'Luis', principal: 300, currency: 'USD', date: '2026-10-01', installments: 1, period: 'mensual',
+        interest: { mode: 'ninguno' }, accountId: 'z', splits: [{ accountId: 'z', amount: 200 }, { accountId: 'b', amount: 100 }], payments: [] }],
+      debts: [{ id: 'd', kind: 'pagar', person: 'Ana', amount: 60, currency: 'USD', date: '2026-10-02', accountId: 'e',
+        splits: [{ accountId: 'e', amount: 20 }, { accountId: 'b', amount: 40 }], payments: [] }]
+    };
+    var mb2 = {}; C.accountBalances(mx2).forEach(function (x) { mb2[x.account.id] = x.balance; });
+    // Zelle 500 − 50 (gasto) − 200 (presté) = 250 · Efectivo 500 − 40 + 30 + 20 (me prestaron) = 510 · Binance 500 − 100 + 40 = 440
+    eq('Gasto mixto 50+40, préstamo dado 200+100 y deuda recibida 20+40 → Zelle 250, Efectivo 510, Binance 440', mb2, { z: 250, e: 510, b: 440 });
+    eq('Gastos filtrando por Efectivo: solo su parte (40)', C.summarizeTransactions(mx2.transactions, mx2.settings.rates, { accountId: 'e' }).expense, 40);
+    eq('Gastos de todas las cuentas: el total (90)', C.summarizeTransactions(mx2.transactions, mx2.settings.rates, {}).expense, 90);
+    eq('Por categoría filtrando por Zelle: 50', C.totalsByCategory(mx2.transactions, mx2.settings.rates, 'egreso', { accountId: 'z' })[0].total, 50);
+
+    var its = [
+      { source: 'venta', person: 'María Gómez', concept: 'Zapatos', currency: 'USD', date: '2026-10-01', dueDate: '2026-10-31', total: 150, pending: 100, status: 'parcial' },
+      { source: 'prestamo', person: 'Luis Pérez', concept: 'Préstamo', currency: 'USD', date: '2026-09-15', dueDate: '2026-10-15', total: 1200, pending: 1200, status: 'pendiente', overdue: true },
+      { source: 'cambio', person: 'Carlos Méndez', concept: 'Cobrar cambio', currency: 'USDT', date: '2026-10-10', dueDate: null, total: 200, pending: 0, status: 'pagada' }];
+    var who = function (q) { return C.searchItems(its, q).map(function (i) { return i.person; }); };
+    eq('Buscar «maria» (sin tilde) → María', who('maria'), ['María Gómez']);
+    eq('Buscar por apellido «perez»', who('perez'), ['Luis Pérez']);
+    eq('Buscar por tipo «préstamo»', who('préstamo'), ['Luis Pérez']);
+    eq('Buscar «vencida»', who('vencida'), ['Luis Pérez']);
+    eq('Buscar por monto «100» (pendiente)', who('100'), ['María Gómez']);
+    eq('Buscar «>500»', who('>500'), ['Luis Pérez']);
+    eq('Buscar «< 250» (con espacio)', who('< 250'), ['María Gómez', 'Carlos Méndez']);
+    eq('Buscar por fecha «15/10»', who('15/10'), ['Luis Pérez']);
+    eq('Dos palabras: «maria zapatos» (y)', who('maria zapatos'), ['María Gómez']);
+    eq('Sin coincidencias', who('pedro'), []);
+    eq('Vacío → todos', who('  ').length, 3);
+
     section('Comprobantes y WhatsApp');
     var R = window.Receipt, rctx = { locale: 'en-US', today: '2026-10-20', business: { name: 'Cambios Express', footer: '¡Gracias!' } };
     eq('Número estable: prefijo + AAMMDD + 4 del id', R.number('CAM', '2026-10-16', 'ab12cd34-ffff'), 'CAM-261016-AB12');
