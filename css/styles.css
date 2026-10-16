@@ -659,3 +659,8 @@ label.has-suggest { position: relative; }
 .ppl-amt .owes { color: var(--up); } .ppl-amt .owe { color: var(--down); }
 .hist-sub { white-space: normal !important; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
 .people-suggest li.new { display: block; } .people-suggest li.new .sub { display: inline; font-weight: 400; }
+/* Botón «Editar» visible en la tarjeta de cobros/pagos (préstamos, ventas y cambios) */
+.pay-head { margin-bottom: 4px; }
+.pay-head h2 { min-width: 0; }
+.pay-edit { flex: none; min-height: 36px; padding: 6px 12px; font-size: .85rem; font-weight: 600; color: var(--accent); }
+.pay-edit .ic { width: 16px; height: 16px; }

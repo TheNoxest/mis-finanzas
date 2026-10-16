@@ -234,7 +234,10 @@
 
         <div data-pay-anchor></div>
         <div class="card hidden" id="debt-payments">
-          <h2 id="pay-title">Abonos</h2>
+          <div class="card-head pay-head">
+            <h2 id="pay-title">Abonos</h2>
+            <button type="button" class="pay-edit hidden" id="pay-edit"><svg class="ic"><use href="#i-edit"/></svg><span>Editar</span></button>
+          </div>
           <div class="progress" id="pay-progress"></div>
           <ul class="list" id="pay-list"></ul>
           <form class="grid pay-form" id="pay-form" autocomplete="off" novalidate>
@@ -454,6 +457,7 @@
 
         <form id="loan-form" class="card form" autocomplete="off" novalidate>
           <h2 id="loan-form-title">Nuevo préstamo</h2>
+          <p class="hint hidden" id="loan-edit-hint"></p>
           <div class="seg" role="radiogroup" aria-label="Tipo de préstamo">
             <input type="radio" name="kind" id="lk-otorgado" value="otorgado" checked><label for="lk-otorgado">Presté dinero</label>
             <input type="radio" name="kind" id="lk-recibido" value="recibido"><label for="lk-recibido">Me prestaron</label>

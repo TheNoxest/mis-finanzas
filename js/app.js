@@ -2448,11 +2448,12 @@
     var c = st.side === 'in', cur = st.currency;
     var pct = st.total > 0 ? Math.min(100, st.paid / st.total * 100) : 0;
     $('#pay-title').textContent = (c ? 'Cobro del cambio de ' : 'Entrega del cambio a ') + (x.client || 'cliente');
+    setPayEdit('fx-open-edit', x.id, 'Editar cambio');
     $('#pay-progress').innerHTML = '<span style="width:' + pct + '%"></span>';
     var sets = (x.settlements || []).slice().sort(function (a, b2) { return a.date < b2.date ? 1 : -1; });
     $('#pay-list').innerHTML = '<li class="sub pay-note" style="border:0;padding:4px 0 2px">Cambio del ' + fmtDate(x.date) + ': ' + (c ? 'el cliente te paga ' : 'le entregas ') +
       '<b>' + fmtMoney(st.total, cur) + '</b> (' + fmtMoney(x.received, x.inCurrency) + ' → ' + fmtMoney(x.delivered, x.outCurrency) + ') · ' +
-      '<button type="button" class="link small" data-action="fx-open-edit" data-id="' + x.id + '">Ver o editar el cambio</button></li>' +
+      '</li>' +
       '<li class="sub pay-note" style="border:0;padding:2px 0 8px">' + (c ? 'Cobrado ' : 'Entregado ') + fmtMoney(st.paid, cur) + ' de ' + fmtMoney(st.total, cur) +
       ' · pendiente <b>' + fmtMoney(st.pending, cur) + '</b></li>' +
       sets.map(function (pm) {
@@ -2498,7 +2499,16 @@
     $('#pay-form').dataset.debt = ''; persist(); toast('Eliminado');
   }
 
+  /** Botón visible «Editar …» en la cabecera de la tarjeta de cobros/pagos (antes era un enlace diminuto dentro del texto). */
+  function setPayEdit(action, id, label) {
+    var b = $('#pay-edit');
+    if (!action) { b.classList.add('hidden'); return; }
+    b.dataset.action = action; b.dataset.id = id;
+    b.querySelector('span').textContent = label;
+    b.classList.remove('hidden');
+  }
   function renderDebtPayments() {
+    setPayEdit(null);
     if (payFx) { renderFxPayments(); return; }
     if (payRef) { renderRefPayments(); return; }
     if (accTab !== 'cobrar' && accTab !== 'pagar') { $('#debt-payments').classList.add('hidden'); return; }
@@ -2619,16 +2629,16 @@
     if (sale) {
       st = C.saleBalance(rec); inflow = true;
       $('#pay-title').textContent = 'Cobro de la venta' + (rec.client ? ' a ' + rec.client : '');
+      setPayEdit('sale-edit', rec.id, 'Editar venta');
       html = '<li class="sub pay-note" style="border:0;padding:4px 0 2px">Venta del ' + fmtDate(rec.date) + (rec.concept ? ': ' + esc(rec.concept) : '') + ' · <b>' + fmtMoney(st.total, cur) + '</b>' +
-        (rec.mode === 'contado' ? ' · de contado' : rec.dueDate ? ' · vence ' + fmtDate(rec.dueDate) : '') +
-        ' · <button type="button" class="link small" data-action="sale-edit" data-id="' + rec.id + '">Ver o editar la venta</button></li>' +
+        (rec.mode === 'contado' ? ' · de contado' : rec.dueDate ? ' · vence ' + fmtDate(rec.dueDate) : '') + '</li>' +
         '<li class="sub pay-note" style="border:0;padding:2px 0 8px">Cobrado ' + fmtMoney(st.paid, cur) + ' de ' + fmtMoney(st.total, cur) + ' · pendiente <b>' + fmtMoney(st.pending, cur) + '</b></li>';
     } else {
       st = C.loanStatus(rec, today); inflow = rec.kind !== 'recibido';
       $('#pay-title').textContent = (inflow ? 'Préstamo a ' : 'Préstamo de ') + (rec.person || '');
+      setPayEdit('loan-edit', rec.id, 'Editar préstamo');
       html = '<li class="sub pay-note" style="border:0;padding:4px 0 2px">' + (inflow ? 'Prestaste ' : 'Te prestaron ') + '<b>' + fmtMoney(st.principal, cur) + '</b> el ' + fmtDate(rec.date) +
-        ' · ' + esc(loanTermsText(rec)) + ' · intereses ' + fmtMoney(st.interest, cur) + ' · total ' + fmtMoney(st.total, cur) +
-        ' · <button type="button" class="link small" data-action="loan-edit" data-id="' + rec.id + '">Editar</button></li>' +
+        ' · ' + esc(loanTermsText(rec)) + ' · intereses ' + fmtMoney(st.interest, cur) + ' · total ' + fmtMoney(st.total, cur) + '</li>' +
         '<li class="sub pay-note" style="border:0;padding:2px 0 4px">' + (inflow ? 'Te pagó ' : 'Pagaste ') + fmtMoney(st.paid, cur) + ' de ' + fmtMoney(st.total, cur) +
         ' · pendiente <b>' + fmtMoney(st.pending, cur) + '</b> · capital pendiente ' + fmtMoney(st.capitalPending, cur) +
         (st.overdue > 0 ? ' · <span class="down">vencido ' + fmtMoney(st.overdue, cur) + '</span>' : '') +
@@ -2729,6 +2739,7 @@
   function editSale(id) {
     var sv = byId(state.sales, id); if (!sv) return;
     if (accTab !== 'ventas') showView('cuentas/ventas');
+    payRef = null; payFx = null; $('#debt-payments').classList.add('hidden');
     var f = $('#sale-form');
     resetSaleForm();
     f.editId.value = sv.id;
@@ -2859,6 +2870,7 @@
     f.date.value = S.today(); f.installments.value = '1'; f.period.value = 'mensual';
     renderLoanAccounts();
     $('#loan-form-title').textContent = 'Nuevo préstamo';
+    $('#loan-edit-hint').classList.add('hidden');
     $('[data-action="cancel-loan"]').classList.add('hidden');
     $('[data-action="delete-loan"]').classList.add('hidden');
     syncLoanForm();
@@ -2866,6 +2878,7 @@
   function editLoan(id) {
     var l = byId(state.loans, id); if (!l) return;
     if (accTab !== 'prestamos') showView('cuentas/prestamos');
+    payRef = null; payFx = null; $('#debt-payments').classList.add('hidden');
     var f = $('#loan-form');
     resetLoanForm();
     f.editId.value = l.id;
@@ -2877,9 +2890,14 @@
     f.intMode.value = it.mode || 'ninguno'; f.intValue.value = it.value || ''; f.intBasis.value = it.basis || 'periodo'; f.intMethod.value = it.method || 'simple';
     f.installments.value = l.installments; f.period.value = l.period || 'mensual'; f.firstDue.value = l.firstDue || ''; f.note.value = l.note || '';
     $('#loan-form-title').textContent = 'Editar préstamo';
+    var np = (l.payments || []).length, hint = $('#loan-edit-hint');
+    hint.textContent = np ? 'Tiene ' + np + (np === 1 ? ' pago registrado: se conserva y se aplica' : ' pagos registrados: se conservan y se aplican') + ' al plan con los datos nuevos.'
+      : 'Corrige lo que necesites y pulsa Guardar: el plan de cuotas se recalcula.';
+    hint.classList.remove('hidden');
     $('[data-action="cancel-loan"]').classList.remove('hidden');
     $('[data-action="delete-loan"]').classList.remove('hidden');
     syncLoanForm();
+    renderLoans();
     f.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
   function onLoanSubmit(e) {
@@ -2931,7 +2949,7 @@
       var l = x.l, st = x.st, gv = l.kind !== 'recibido';
       var tag = st.status === 'pagada' ? '<span class="tag ok">Pagado</span>' : st.overdue > 0 ? '<span class="tag danger">Vencido ' + fmtMoney(st.overdue, l.currency) + '</span>'
         : st.next && st.next.date <= C.addDays(today, 7) ? '<span class="tag warn">Cuota el ' + fmtDate(st.next.date) + '</span>' : '';
-      var on = !!payRef && payRef.id === l.id;
+      var on = (!!payRef && payRef.id === l.id) || $('#loan-form').editId.value === l.id;
       return '<li class="clickable' + (on ? ' editing' : '') + '" data-pay-ref="loan|' + l.id + '" tabindex="0" role="button">' +
         '<span class="avatar ' + (gv ? 'out' : 'in') + '">' + initials(l.person) + '</span>' +
         '<div class="main"><div class="title">' + esc(l.person || 'Sin nombre') + ' <span class="tag info">' + (gv ? 'Presté' : 'Me prestaron') + '</span> ' + tag + '</div>' +
@@ -4142,7 +4160,7 @@
           payRef = null; resetLoanForm(); persist(); toast('Préstamo eliminado');
         }
       }
-      else if (d.action === 'fx-open-edit') { editFx(d.id); }
+      else if (d.action === 'fx-open-edit') { payFx = null; payRef = null; $('#debt-payments').classList.add('hidden'); editFx(d.id); }
       else if (d.action === 'fx-fix-settle-acc') {
         var fxx = byId(state.exchanges, d.id), fst = fxx && C.exchangeSettlement(fxx);
         if (fst) {
