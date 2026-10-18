@@ -535,6 +535,50 @@
       [C.matchPeople(ppl, 'an').map(function (p) { return p.name; }), C.matchPeople(ppl, 'lop').map(function (p) { return p.name; }),
        C.matchPeople(ppl, 'lu').map(function (p) { return p.name; }), C.matchPeople(ppl, 'xyz').length], [['Ana López'], ['Ana López'], ['Luis'], 0]);
 
+    section('Historial completo: todas las operaciones, orden y posibles errores');
+    var lg = { settings: { baseCurrency: 'USD', rates: { USD: 1, USDT: 1, EUR: 1.1 } },
+      accounts: [{ id: 'A', name: 'Banco', currency: 'USD' }, { id: 'B', name: 'Binance', currency: 'USDT' }, { id: 'E', name: 'Euros', currency: 'EUR' }, { id: 'E2', name: 'Euros 2', currency: 'EUR' }],
+      transactions: [
+        { id: 't1', type: 'ingreso', date: '2026-10-01', amount: 100, currency: 'USD', accountId: 'A', categoryId: 'sal' },
+        { id: 't2', type: 'egreso', date: '2026-10-02', amount: 30, currency: 'USD', accountId: 'A', categoryId: 'com' },
+        { id: 't3', type: 'egreso', date: '2026-10-02', amount: 30, currency: 'USD', accountId: 'A', categoryId: 'com' },
+        { id: 't4', type: 'transferencia', date: '2026-10-03', amount: 10, currency: 'USD', fromAccountId: 'A', toAccountId: 'A', toAmount: 10, toCurrency: 'USD' },
+        { id: 't5', type: 'egreso', date: '2026-10-04', amount: 20, currency: 'USD', accountId: null, categoryId: 'com' },
+        { id: 't6', type: 'ingreso', date: '2026-10-05', amount: 50, currency: 'USD', accountId: 'E', categoryId: 'sal' },
+        { id: 't7', type: 'egreso', date: '2026-12-01', amount: 5, currency: 'USD', accountId: 'A', categoryId: 'com' }],
+      investments: [{ id: 'o1', side: 'compra', assetType: 'cripto', ticker: 'BTC', quantity: 0.001, price: 60000, fee: 0, currency: 'USD', date: '2026-10-10', accountId: 'A' }],
+      exchanges: [
+        { id: 'x1', date: '2026-10-06', client: 'Ana', status: 'completada', received: 100, inCurrency: 'USD', delivered: 97, outCurrency: 'USDT', inAccountId: 'A', outAccountId: 'B', costs: [], commissionAmount: 3, snapshot: { base: 'USD', rates: { USD: 1, USDT: 1 } } },
+        { id: 'x2', date: '2026-10-06', client: 'Luis', status: 'completada', settleSide: 'out', received: 50, inCurrency: 'USD', delivered: 45, outCurrency: 'EUR', inAccountId: 'A', outAccountId: 'E', costs: [],
+          commissionAmount: 0, settlements: [{ id: 'z1', date: '2026-10-08', amount: 45, accountId: 'E2' }], snapshot: { base: 'USD', rates: { USD: 1, EUR: 1.1 } } }],
+      sales: [{ id: 's1', date: '2026-10-07', client: 'Ana', concept: 'Camisa', amount: 60, currency: 'USD', mode: 'contado', accountId: 'A' },
+        { id: 's2', date: '2026-10-07', client: 'Luis', concept: 'Pedido', amount: 40, currency: 'USD', mode: 'credito', payments: [{ id: 'q1', date: '2026-10-08', amount: 15, accountId: 'A' }] }],
+      loans: [{ id: 'l1', kind: 'otorgado', person: 'Pedro', principal: 200, currency: 'USD', date: '2026-10-01', accountId: 'A', installments: 2, period: 'mensual', interest: { mode: 'ninguno' },
+        payments: [{ id: 'q2', date: '2026-10-15', amount: 100, accountId: 'A' }] }],
+      debts: [{ id: 'd1', kind: 'cobrar', person: 'Ana', concept: 'Préstamo chico', amount: 25, currency: 'USD', date: '2026-09-30', accountId: null, payments: [{ id: 'q3', date: '2026-10-09', amount: 5, accountId: 'A' }] }] };
+    var lrows = C.ledger(lg), lby = {};
+    lrows.forEach(function (r) { lby[r.key] = r; });
+    eq('18 filas: 7 movimientos + 1 inversión + 2 cambios + 1 entrega + 2 ventas + 1 cobro + 1 préstamo + 1 pago + 1 deuda + 1 abono', lrows.length, 18);
+    eq('Cambio completado: +100 USD en Banco y −97 USDT en Binance → neto 3; cambio con entrega aparte: solo +50 en Banco; la entrega −45 EUR sale de Euros 2',
+      [lby['fx:x1'].parts, lby['fx:x1'].netBase, lby['fx:x2'].parts, lby['fxs:x2:z1'].kind, lby['fxs:x2:z1'].parts],
+      [[{ accountId: 'A', amount: 100 }, { accountId: 'B', amount: -97 }], 3, [{ accountId: 'A', amount: 50 }], 'entrega_cambio', [{ accountId: 'E2', amount: -45 }]]);
+    eq('Venta a crédito no mueve cuentas (por cobrar); su cobro +15; préstamo dado −200; compra BTC 0.001 × 60000 = −60',
+      [lby['sale:s2'].parts, lby['sale:s2'].status, lby['salep:s2:q1'].parts, lby['loan:l1'].parts, lby['inv:o1'].parts],
+      [[], 'por_cobrar', [{ accountId: 'A', amount: 15 }], [{ accountId: 'A', amount: -200 }], [{ accountId: 'A', amount: -60 }]]);
+    var liss = C.ledgerIssues(lrows, lg, '2026-10-18');
+    eq('Avisos: t2 y t3 duplicados · t4 a la misma cuenta · t5 sin cuenta · t6 USD en cuenta EUR · t7 fecha futura · entrega en otra cuenta que la del cambio',
+      Object.keys(liss).sort().map(function (k) { return k + '=' + liss[k].join('+'); }),
+      ['fxs:x2:z1=cuenta_distinta', 'tx:t2=duplicado', 'tx:t3=duplicado', 'tx:t4=misma_cuenta', 'tx:t5=sin_cuenta', 'tx:t6=moneda', 'tx:t7=futuro']);
+    eq('Ordenar por monto (mayor): préstamo 200; empates de 100 por fecha: pago del 15/10, cambio del 6/10, ingreso del 1/10',
+      C.ledgerSort(lrows, 'monto').slice(0, 4).map(function (r) { return r.key; }), ['loan:l1', 'loanp:l1:q2', 'fx:x1', 'tx:t1']);
+    eq('Ordenar por cliente: Ana primero (abono 9/10, venta 7/10, cambio 6/10, deuda 30/9)',
+      C.ledgerSort(lrows, 'persona').slice(0, 4).map(function (r) { return r.key; }), ['debtp:d1:q3', 'sale:s1', 'fx:x1', 'debt:d1']);
+    eq('Fecha más antigua primero: la deuda del 30/9', C.ledgerSort(lrows, 'fecha_asc')[0].key, 'debt:d1');
+    eq('Filtros: «ana» → 4 · «>90» → 4 (100, 100, 200, 100) · ventas → 3 · cuenta Euros 2 → 1 · solo con avisos → 7',
+      [C.ledgerFilter(lrows, { q: 'ana' }).length, C.ledgerFilter(lrows, { q: '>90' }).length, C.ledgerFilter(lrows, { group: 'venta' }).length,
+       C.ledgerFilter(lrows, { accountId: 'E2' }).length, C.ledgerFilter(lrows, { onlyIssues: true, issues: liss }).length], [4, 4, 3, 1, 7]);
+    eq('Mes de octubre (1–31/10): 16 filas (fuera: deuda del 30/9 y gasto del 1/12)', C.ledgerFilter(lrows, { from: '2026-10-01', to: '2026-10-31' }).length, 16);
+
     section('Registro por voz o texto');
     var vctx = { today: '2026-10-14', defaultAccountId: 'efe', currencies: ['USD', 'USDT', 'EUR'],
       accounts: [{ id: 'efe', name: 'Efectivo', currency: 'USD' }, { id: 'bin', name: 'Binance', currency: 'USDT' }, { id: 'eur', name: 'Cuenta en euros', currency: 'EUR' }],

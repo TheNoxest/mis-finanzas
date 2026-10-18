@@ -617,6 +617,193 @@
       pending: pending > 0 ? pending : 0, status: pending <= 0 ? 'pagada' : paid > 0 ? 'parcial' : 'pendiente' };
   }
 
+  // =================================================================== Historial completo (libro de movimientos)
+  /**
+   * Una fila por cada cosa que movió (o debía mover) dinero, de todos los módulos:
+   *  ingresos/gastos, transferencias, inversiones, cambios (+ cobros/entregas posteriores), ventas (+ cobros),
+   *  préstamos (+ pagos) y deudas (+ abonos).
+   * Fila: { key, date, createdAt, group, kind, person, concept, categoryId, note, currency, amount (≥ 0),
+   *         parts: [{accountId, amount con signo en la moneda de la cuenta}], sizeBase (monto en base, para ordenar),
+   *         netBase (efecto neto en las cuentas, base), status, ref: { kind, id, pay }, extra }
+   */
+  function ledger(state) {
+    var rates = state.settings.rates, rows = [];
+    var toB = function (v, c) { var r = toBase(v, c, rates); return isNaN(r) ? 0 : r; };
+    var accCur = {};
+    (state.accounts || []).forEach(function (a) { accCur[a.id] = a.currency; });
+    var signed = function (list, sign) { return list.map(function (x) { return { accountId: x.accountId, amount: round(sign * Number(x.amount), 2) }; }); };
+    function push(r) {
+      r.amount = round(Math.abs(Number(r.amount) || 0), 2);
+      r.parts = r.parts || [];
+      r.sizeBase = toB(r.amount, r.currency);
+      r.netBase = round(sum(r.parts.map(function (p) { return toB(p.amount, accCur[p.accountId] || r.currency); })), 2);
+      rows.push(r);
+    }
+    state.transactions.forEach(function (t) {
+      if (t.type === 'transferencia') {
+        var tp = [];
+        if (t.fromAccountId) tp.push({ accountId: t.fromAccountId, amount: -round(Number(t.amount), 2) });
+        if (t.toAccountId) tp.push({ accountId: t.toAccountId, amount: round(Number(t.toAmount != null ? t.toAmount : t.amount), 2) });
+        push({ key: 'tx:' + t.id, date: t.date, createdAt: t.createdAt, group: 'transferencia', kind: 'transferencia', person: '', concept: '',
+          note: t.note || '', currency: t.currency, amount: t.amount, parts: tp, status: '', ref: { kind: 'tx', id: t.id },
+          extra: { from: t.fromAccountId, to: t.toAccountId, toAmount: t.toAmount, toCurrency: t.toCurrency } });
+        return;
+      }
+      var sg = t.type === 'ingreso' ? 1 : -1;
+      push({ key: 'tx:' + t.id, date: t.date, createdAt: t.createdAt, group: t.type === 'ingreso' ? 'ingreso' : 'gasto', kind: t.type,
+        person: '', concept: '', categoryId: t.categoryId, note: t.note || '', currency: t.currency, amount: t.amount,
+        parts: signed(splitsOf(t.splits, t.accountId, t.amount), sg), status: '', ref: { kind: 'tx', id: t.id } });
+    });
+    (state.investments || []).forEach(function (o) {
+      var buy = o.side !== 'venta', tot = operationTotal(o);
+      push({ key: 'inv:' + o.id, date: o.date, createdAt: o.createdAt, group: 'inversion', kind: buy ? 'compra' : 'venta_inv', person: '',
+        concept: String(o.ticker || '').toUpperCase(), note: o.note || '', currency: o.currency, amount: tot,
+        parts: o.accountId ? [{ accountId: o.accountId, amount: round(buy ? -tot : tot, 2) }] : [], status: '', ref: { kind: 'inv', id: o.id },
+        extra: { quantity: o.quantity, price: o.price } });
+    });
+    (state.exchanges || []).forEach(function (x) {
+      var st = exchangeSettlement(x), parts = [];
+      if (!(st && st.side === 'in') && x.status !== 'pendiente_cobro') parts = parts.concat(signed(fxSplits(x, 'in'), 1));
+      if (!(st && st.side === 'out') && x.status !== 'pendiente_entrega') parts = parts.concat(signed(fxSplits(x, 'out'), -1));
+      (x.costs || []).forEach(function (c) { if (c.accountId) parts.push({ accountId: c.accountId, amount: -round(Number(c.amount), 2) }); });
+      push({ key: 'fx:' + x.id, date: x.date, createdAt: x.createdAt, group: 'cambio', kind: 'cambio', person: x.client || '', concept: '',
+        note: x.note || '', currency: x.inCurrency, amount: x.received, parts: parts,
+        status: st && st.status !== 'pagada' ? (st.side === 'in' ? 'falta_cobrar' : 'falta_entregar') : '', ref: { kind: 'fx', id: x.id },
+        extra: { received: x.received, inCurrency: x.inCurrency, delivered: x.delivered, outCurrency: x.outCurrency, profit: exchangeProfit(x, rates).profit } });
+      if (st) (x.settlements || []).forEach(function (z) {
+        var cur = st.side === 'in' ? x.inCurrency : x.outCurrency;
+        push({ key: 'fxs:' + x.id + ':' + z.id, date: z.date, createdAt: z.createdAt, group: 'cambio', kind: st.side === 'in' ? 'cobro_cambio' : 'entrega_cambio',
+          person: x.client || '', concept: '', note: z.note || '', currency: cur, amount: z.amount,
+          parts: signed(paySplits(z), st.side === 'in' ? 1 : -1), status: '', ref: { kind: 'fx', id: x.id, pay: z.id },
+          extra: { side: st.side, sideAccount: st.side === 'in' ? x.inAccountId : x.outAccountId, mixed: !!(z.splits && z.splits.length > 1) } });
+      });
+    });
+    (state.sales || []).forEach(function (sv) {
+      var b = saleBalance(sv), cash = sv.mode === 'contado';
+      push({ key: 'sale:' + sv.id, date: sv.date, createdAt: sv.createdAt, group: 'venta', kind: 'venta', person: sv.client || '', concept: sv.concept || '',
+        categoryId: sv.categoryId, note: sv.note || '', currency: sv.currency, amount: sv.amount,
+        parts: cash ? signed(splitsOf(sv.splits, sv.accountId, sv.amount), 1) : [], status: cash ? 'contado' : b.status === 'pagada' ? 'cobrada' : 'por_cobrar',
+        ref: { kind: 'sale', id: sv.id }, extra: { mode: sv.mode } });
+      (sv.payments || []).forEach(function (pm) {
+        push({ key: 'salep:' + sv.id + ':' + pm.id, date: pm.date, createdAt: pm.createdAt, group: 'venta', kind: 'cobro_venta', person: sv.client || '',
+          concept: sv.concept || '', note: pm.note || '', currency: sv.currency, amount: pm.amount, parts: signed(paySplits(pm), 1), status: '',
+          ref: { kind: 'sale', id: sv.id, pay: pm.id } });
+      });
+    });
+    (state.loans || []).forEach(function (l) {
+      var rec = l.kind === 'recibido', ls = loanStatus(l, null);
+      push({ key: 'loan:' + l.id, date: l.date, createdAt: l.createdAt, group: 'prestamo', kind: rec ? 'prestamo_recibido' : 'prestamo_dado',
+        person: l.person || '', concept: '', note: l.note || '', currency: l.currency, amount: l.principal,
+        parts: signed(splitsOf(l.splits, l.accountId, l.principal), rec ? 1 : -1), status: ls.status === 'pagada' ? 'pagado' : 'activo', ref: { kind: 'loan', id: l.id } });
+      var split = {};
+      loanPaymentSplit(l).forEach(function (x) { split[x.payment.id] = x; });
+      (l.payments || []).forEach(function (pm) {
+        push({ key: 'loanp:' + l.id + ':' + pm.id, date: pm.date, createdAt: pm.createdAt, group: 'prestamo', kind: rec ? 'pago_prestamo' : 'cobro_prestamo',
+          person: l.person || '', concept: '', note: pm.note || '', currency: l.currency, amount: pm.amount, parts: signed(paySplits(pm), rec ? -1 : 1),
+          status: '', ref: { kind: 'loan', id: l.id, pay: pm.id }, extra: { interest: split[pm.id] ? split[pm.id].interest : 0 } });
+      });
+    });
+    (state.debts || []).forEach(function (d) {
+      var cob = d.kind === 'cobrar', b = debtBalance(d);
+      push({ key: 'debt:' + d.id, date: d.date, createdAt: d.createdAt, group: 'deuda', kind: cob ? 'deuda_cobrar' : 'deuda_pagar', person: d.person || '',
+        concept: d.concept || '', note: d.note || '', currency: d.currency, amount: d.amount,
+        parts: signed(splitsOf(d.splits, d.accountId, d.amount), cob ? -1 : 1), status: b.status === 'pagada' ? 'saldada' : 'pendiente', ref: { kind: 'debt', id: d.id } });
+      (d.payments || []).forEach(function (pm) {
+        push({ key: 'debtp:' + d.id + ':' + pm.id, date: pm.date, createdAt: pm.createdAt, group: 'deuda', kind: cob ? 'abono_recibido' : 'abono_pagado',
+          person: d.person || '', concept: d.concept || '', note: pm.note || '', currency: d.currency, amount: pm.amount,
+          parts: signed(paySplits(pm), cob ? 1 : -1), status: '', ref: { kind: 'debt', id: d.id, pay: pm.id } });
+      });
+    });
+    return rows;
+  }
+
+  /** Filas que deberían mover dinero en una cuenta (si no tienen ninguna, se avisa). */
+  var NEEDS_ACCOUNT = { ingreso: 1, egreso: 1, cobro_cambio: 1, entrega_cambio: 1, cobro_venta: 1, pago_prestamo: 1, cobro_prestamo: 1, abono_recibido: 1, abono_pagado: 1 };
+  /**
+   * Posibles errores por fila → { key: ['duplicado', 'sin_cuenta', …] }.
+   *  duplicado: mismo tipo, fecha, moneda, monto, persona, categoría y cuentas que otra fila
+   *  sin_cuenta: debía mover dinero y no toca ninguna cuenta (o una transferencia sin origen/destino; un cambio completado sin cuentas)
+   *  cuenta_borrada · misma_cuenta (transferencia) · moneda (cuenta en otra moneda que no vale lo mismo) · futuro · cero
+   *  cuenta_distinta: cobro/entrega de un cambio en una cuenta distinta a la del cambio (si no es un pago mixto)
+   */
+  function ledgerIssues(rows, state, today) {
+    var out = {}, seen = {};
+    var acc = {};
+    (state.accounts || []).forEach(function (a) { acc[a.id] = a; });
+    var flag = function (r, code) { (out[r.key] = out[r.key] || []).indexOf(code) < 0 && out[r.key].push(code); };
+    rows.forEach(function (r) {
+      var dk = [r.kind, r.date, r.currency, r.amount.toFixed(2), personKey(r.person), r.categoryId || '', r.concept ? personKey(r.concept) : '',
+        r.parts.map(function (p) { return p.accountId + ':' + p.amount; }).sort().join(',')].join('|');
+      (seen[dk] = seen[dk] || []).push(r);
+      if (!(r.amount > 0)) flag(r, 'cero');
+      if (today && r.date > today) flag(r, 'futuro');
+      if (NEEDS_ACCOUNT[r.kind] && !r.parts.length) flag(r, 'sin_cuenta');
+      if (r.kind === 'venta' && r.status === 'contado' && !r.parts.length) flag(r, 'sin_cuenta');
+      if (r.kind === 'transferencia') {
+        if (!r.extra.from || !r.extra.to) flag(r, 'sin_cuenta');
+        else if (r.extra.from === r.extra.to) flag(r, 'misma_cuenta');
+      }
+      if (r.kind === 'cambio' && !r.status && !r.parts.length) flag(r, 'sin_cuenta');
+      r.parts.forEach(function (p) {
+        var a = acc[p.accountId];
+        if (!a) { flag(r, 'cuenta_borrada'); return; }
+        var cur = r.kind === 'cambio' ? null : r.kind === 'transferencia' ? (p.amount < 0 ? r.currency : r.extra.toCurrency || r.currency) : r.currency;
+        if (cur && !samePeg(a.currency, cur)) flag(r, 'moneda');
+      });
+      if ((r.kind === 'cobro_cambio' || r.kind === 'entrega_cambio') && !r.extra.mixed && r.extra.sideAccount &&
+          r.parts.some(function (p) { return p.accountId !== r.extra.sideAccount; })) flag(r, 'cuenta_distinta');
+    });
+    Object.keys(seen).forEach(function (k) { if (seen[k].length > 1) seen[k].forEach(function (r) { flag(r, 'duplicado'); }); });
+    return out;
+  }
+
+  /**
+   * Ordena una copia: 'fecha' (reciente primero) | 'fecha_asc' | 'persona' (A-Z, luego fecha) | 'monto' (mayor) | 'monto_asc' | 'tipo'.
+   */
+  function ledgerSort(rows, by) {
+    var byDate = function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : (b.createdAt || 0) - (a.createdAt || 0); };
+    var cmp = {
+      fecha: byDate,
+      fecha_asc: function (a, b) { return -byDate(a, b); },
+      persona: function (a, b) {
+        var pa = personKey(a.person), pb = personKey(b.person);
+        if (!pa !== !pb) return pa ? -1 : 1;                 // sin persona al final
+        return pa < pb ? -1 : pa > pb ? 1 : byDate(a, b);
+      },
+      monto: function (a, b) { return b.sizeBase - a.sizeBase || byDate(a, b); },
+      monto_asc: function (a, b) { return a.sizeBase - b.sizeBase || byDate(a, b); },
+      tipo: function (a, b) { return a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : byDate(a, b); }
+    }[by] || byDate;
+    return rows.slice().sort(cmp);
+  }
+
+  /**
+   * Filtra el historial. opts: { from, to, group, accountId, q (texto: persona, concepto, nota, tipo; números y «>100», «<50»), issues: mapa, onlyIssues }
+   * names(r): texto extra que pone la interfaz (nombre de categoría y de cuentas, etiqueta del tipo).
+   */
+  function ledgerFilter(rows, opts, names) {
+    opts = opts || {};
+    var tokens = String(opts.q || '').trim().replace(/([<>]=?)\s+/g, '$1').split(/\s+/).filter(Boolean);
+    return rows.filter(function (r) {
+      if (opts.from && r.date < opts.from) return false;
+      if (opts.to && r.date > opts.to) return false;
+      if (opts.group && r.group !== opts.group) return false;
+      if (opts.accountId && !r.parts.some(function (p) { return p.accountId === opts.accountId; }) &&
+          !(r.extra && (r.extra.from === opts.accountId || r.extra.to === opts.accountId))) return false;
+      if (opts.onlyIssues && !(opts.issues && opts.issues[r.key] && opts.issues[r.key].length)) return false;
+      if (!tokens.length) return true;
+      var hay = personKey([r.person, r.concept, r.note, names ? names(r) : ''].join(' '));
+      var dmy = r.date.split('-').reverse().join('/');
+      return tokens.every(function (tk) {
+        var c = /^([<>]=?)(.+)$/.exec(tk);
+        if (c) { var v = parseNum(c[2]); if (isNaN(v)) return false; return c[1] === '>' ? r.amount > v : c[1] === '>=' ? r.amount >= v : c[1] === '<' ? r.amount < v : r.amount <= v; }
+        if (tk.indexOf('/') >= 0) return dmy.indexOf(tk) >= 0;
+        if (/^[\d.,]+$/.test(tk)) { var n = parseNum(tk); if (!isNaN(n) && String(r.amount).replace('.', '').indexOf(String(n).replace('.', '')) === 0) return true; }
+        return hay.indexOf(personKey(tk)) >= 0;
+      });
+    });
+  }
+
   // =================================================================== Buscador de Por cobrar / Por pagar
   var SOURCE_NAME = { deuda: 'deuda prestamo', venta: 'venta', prestamo: 'prestamo', cambio: 'cambio divisas' };
   /**
@@ -1131,6 +1318,7 @@
     flowTransactions: flowTransactions,
     samePeg: samePeg,
     searchItems: searchItems, txAmount: txAmount,
+    ledger: ledger, ledgerIssues: ledgerIssues, ledgerSort: ledgerSort, ledgerFilter: ledgerFilter,
     splitsOf: splitsOf, paySplits: paySplits, fxSplits: fxSplits, splitAmount: splitAmount, checkSplits: checkSplits,
     transferFee: transferFee,
     parseAmount: parseAmount, parseNum: parseNum,

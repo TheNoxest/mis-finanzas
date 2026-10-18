@@ -730,3 +730,19 @@ label.has-suggest { position: relative; }
 .mix-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(70px, 34%) 32px; gap: 6px; align-items: center; margin-bottom: 6px; }
 .mix-row > * { min-width: 0; }
 .mix-status { font-size: .8rem; font-weight: 600; }
+
+/* ---------- Historial completo ---------- */
+.hist-scope { margin-bottom: 12px; }
+.lg-filters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.lg-filters input, .lg-filters select { width: 100%; }
+.ledger .lg-day { display: flex; justify-content: space-between; gap: 8px; padding: 12px 2px 6px; border-bottom: 1px solid var(--border);
+  font-size: .78rem; font-weight: 700; color: var(--ink-2); text-transform: capitalize; cursor: default; }
+.ledger .lg-day span:last-child { font-weight: 600; text-transform: none; }
+.ledger .lg-row .main { min-width: 0; }
+.ledger .lg-row .title { white-space: normal; }
+.ledger .lg-row .sub { white-space: normal; overflow-wrap: anywhere; }
+.ledger .lg-acc { color: var(--ink-2); }
+.ledger .lg-acc b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.ledger .lg-flags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.ledger .lg-row.has-issue { box-shadow: inset 3px 0 0 #d03b3b; padding-left: 8px; }
+.ledger .amt { white-space: nowrap; }

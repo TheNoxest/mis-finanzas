@@ -164,7 +164,49 @@
         <input type="hidden" name="editId">
       </form>
 
-      <div class="card">
+      <div class="card" id="hist-card">
+        <div class="seg seg-sm hist-scope" role="radiogroup" aria-label="Qué historial ver">
+          <input type="radio" name="hist-scope" id="hs-tx" value="tx" checked><label for="hs-tx">Ingresos y gastos</label>
+          <input type="radio" name="hist-scope" id="hs-all" value="all"><label for="hs-all">Todas las operaciones</label>
+        </div>
+        <div id="hist-all" class="hidden">
+          <h2>Historial completo <small class="muted small">· toca una para abrirla y corregirla</small></h2>
+          <div class="search" role="search" style="margin:8px 0">
+            <svg class="ic"><use href="#i-search"/></svg>
+            <input id="lg-q" type="search" placeholder="Buscar: cliente, concepto, monto, >100, 14/10…" autocomplete="off" aria-label="Buscar en el historial">
+          </div>
+          <div class="filters lg-filters">
+            <input type="month" id="lg-month" aria-label="Mes (vacío = todo)">
+            <select id="lg-group" aria-label="Tipo">
+              <option value="">Todos los tipos</option>
+              <option value="ingreso">Ingresos</option>
+              <option value="gasto">Gastos</option>
+              <option value="transferencia">Transferencias</option>
+              <option value="cambio">Cambios</option>
+              <option value="venta">Ventas</option>
+              <option value="prestamo">Préstamos</option>
+              <option value="deuda">Deudas</option>
+              <option value="inversion">Inversiones</option>
+            </select>
+            <select id="lg-account" aria-label="Cuenta"></select>
+            <select id="lg-sort" aria-label="Ordenar">
+              <option value="fecha">Fecha (reciente)</option>
+              <option value="fecha_asc">Fecha (antigua)</option>
+              <option value="persona">Cliente (A-Z)</option>
+              <option value="monto">Monto (mayor)</option>
+              <option value="monto_asc">Monto (menor)</option>
+              <option value="tipo">Tipo</option>
+            </select>
+          </div>
+          <label class="check" style="margin:8px 0 4px"><input type="checkbox" id="lg-issues"><span id="lg-issues-label">Solo con avisos</span></label>
+          <div class="totals" id="lg-totals"></div>
+          <ul class="list ledger" id="lg-list"></ul>
+          <div class="actions" style="justify-content:space-between">
+            <button type="button" class="hidden" data-action="lg-more" id="lg-more">Ver más</button>
+            <button type="button" data-action="lg-csv">Descargar CSV</button>
+          </div>
+        </div>
+        <div id="hist-tx">
         <div class="card-head wrap">
           <h2>Historial <small class="muted small">· toca o desliza → para editar, ← para borrar</small></h2>
           <div class="filters">
@@ -180,6 +222,7 @@
         </div>
         <div class="totals" id="tx-totals"></div>
         <ul class="list" id="tx-list"></ul>
+        </div>
       </div>
     </section>
 
