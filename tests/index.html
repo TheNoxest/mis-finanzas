@@ -579,6 +579,18 @@
        C.ledgerFilter(lrows, { accountId: 'E2' }).length, C.ledgerFilter(lrows, { onlyIssues: true, issues: liss }).length], [4, 4, 3, 1, 7]);
     eq('Mes de octubre (1–31/10): 16 filas (fuera: deuda del 30/9 y gasto del 1/12)', C.ledgerFilter(lrows, { from: '2026-10-01', to: '2026-10-31' }).length, 16);
 
+    section('Búsqueda global (la lupa)');
+    var gs = function (q, o) { return C.globalSearch(lg, q, '2026-10-18', o); };
+    var gAna = gs('ana');
+    eq('«ana» → cliente Ana; 4 operaciones suyas; ninguna cuenta ni activo', [gAna.people.map(function (p) { return p.name; }), gAna.opsTotal, gAna.accounts.length, gAna.assets.length], [['Ana'], 4, 0, 0]);
+    var gBin = gs('binance', { names: function (r) { return r.parts.map(function (p) { return { A: 'Banco', B: 'Binance', E: 'Euros', E2: 'Euros 2' }[p.accountId]; }).join(' '); } });
+    eq('«binance» → la cuenta Binance y el cambio que la usa (con nombres de cuentas)', [gBin.accounts.map(function (a) { return a.id; }), gBin.ops.map(function (r) { return r.key; })], [['B'], ['fx:x1']]);
+    eq('«100» → solo operaciones de 100 (ingreso, cambio y pago de préstamo), sin clientes ni cuentas',
+      [gs('100').opsTotal, gs('100').people.length, gs('100').accounts.length], [3, 0, 0]);
+    eq('«>150» → el préstamo de 200 · «btc» → activo BTC y su compra · vacío → nada',
+      [gs('>150').ops.map(function (r) { return r.key; }), gs('btc').assets.map(function (a) { return a.assetType + ' ' + a.ticker; }), gs('btc').opsTotal, gs('  ').opsTotal],
+      [['loan:l1'], ['cripto BTC'], 1, 0]);
+
     section('Registro por voz o texto');
     var vctx = { today: '2026-10-14', defaultAccountId: 'efe', currencies: ['USD', 'USDT', 'EUR'],
       accounts: [{ id: 'efe', name: 'Efectivo', currency: 'USD' }, { id: 'bin', name: 'Binance', currency: 'USDT' }, { id: 'eur', name: 'Cuenta en euros', currency: 'EUR' }],

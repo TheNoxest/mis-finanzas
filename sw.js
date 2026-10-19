@@ -7,11 +7,11 @@
  * archivos de versiones distintas y la app quedaba en blanco.
  * Precios, tasas y la nube van siempre a la red: nunca se guardan aquí.
  * ========================================================================= */
-var CACHE = 'mis-finanzas-v22';
+var CACHE = 'mis-finanzas-v23';
 var SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/styles.css',
   'js/config.js', 'js/calc.js', 'js/store.js', 'js/prices.js', 'js/charts.js', 'js/advisor.js', 'js/insights.js', 'js/voice.js', 'js/backups.js', 'js/sync.js', 'js/receipt.js',
-  'js/app/core.js', 'js/app/inicio.js', 'js/app/movimientos.js', 'js/app/cuentas.js', 'js/app/inversiones.js', 'js/app/ajustes.js', 'js/app/analisis.js', 'js/app/explorar.js', 'js/app/consejos.js', 'js/app/ficha-activo.js', 'js/app/terceros.js', 'js/app/clientes.js', 'js/app/ventas-prestamos.js', 'js/app/pagos-mixtos.js', 'js/app/comprobantes.js', 'js/app/cambios.js', 'js/app/ficha-cuenta.js', 'js/app/sincronizacion.js', 'js/app/registro-rapido.js', 'js/app/eventos.js', 'js/app/init.js',
+  'js/app/core.js', 'js/app/inicio.js', 'js/app/movimientos.js', 'js/app/cuentas.js', 'js/app/inversiones.js', 'js/app/ajustes.js', 'js/app/analisis.js', 'js/app/explorar.js', 'js/app/consejos.js', 'js/app/ficha-activo.js', 'js/app/terceros.js', 'js/app/clientes.js', 'js/app/ventas-prestamos.js', 'js/app/pagos-mixtos.js', 'js/app/comprobantes.js', 'js/app/cambios.js', 'js/app/ficha-cuenta.js', 'js/app/sincronizacion.js', 'js/app/registro-rapido.js', 'js/app/busqueda.js', 'js/app/eventos.js', 'js/app/init.js',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'
 ];
 var TIMEOUT = 4000;

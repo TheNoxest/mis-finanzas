@@ -269,7 +269,7 @@ function bind() {
     if (receiptClick(d)) return;
     if (d.action === 'debt-search-all') { $('#df-all').checked = true; renderDebts(); return; }
     if (d.goto) showView(d.goto);
-    else if (d.action === 'open-search') { showView('inversiones'); setTimeout(function () { $('#asset-search').focus(); }, 0); }
+    else if (d.action === 'open-search') openGlobalSearch();   // lupa de arriba: búsqueda en toda la app (app/busqueda.js)
     else if (d.action === 'asset-back') showView('inversiones');
     else if (d.openAccount) openAccount(d.openAccount);
     else if (d.action === 'account-back') showView('cuentas');

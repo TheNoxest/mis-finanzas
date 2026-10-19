@@ -804,6 +804,42 @@
     });
   }
 
+  // =================================================================== Búsqueda global (la lupa)
+  /**
+   * Busca en toda la app. Devuelve grupos ya ordenados:
+   *  people:   clientes (por nombre o apellido; matchPeople)
+   *  ops:      operaciones del historial completo (ledgerFilter: texto, nota, concepto, montos, «>100», fechas «14/10»), más reciente primero
+   *  accounts: cuentas por nombre, moneda o tipo
+   *  assets:   activos que tienes o tuviste (ticker o nombre)
+   * opts: { names(fila) → texto extra (categoría, cuentas…), metaName(tipo, ticker) → nombre, kinds: {banco: 'Banco'…}, limit }
+   * Con texto vacío no devuelve nada.
+   */
+  function globalSearch(state, q, today, opts) {
+    opts = opts || {};
+    var text = String(q || '').trim(), out = { people: [], ops: [], opsTotal: 0, accounts: [], assets: [] };
+    if (!text) return out;
+    var limit = opts.limit || 30, words = personKey(text.replace(/[<>]=?\s*[\d.,]+/g, ' ')).split(' ').filter(Boolean);
+    var numeric = /^[<>]=?\s*[\d.,]+$|^[\d.,]+$/.test(text) || /^\d{1,2}\/\d{1,2}(\/\d{2,4})?$/.test(text);
+    var all = function (hay) { hay = personKey(hay); return words.length > 0 && words.every(function (w) { return hay.indexOf(w) >= 0; }); };
+    if (!numeric) out.people = matchPeople(peopleIndex(state, today), text, 6);
+    var ops = ledgerSort(ledgerFilter(ledger(state), { q: text }, opts.names), 'fecha');
+    out.opsTotal = ops.length;
+    out.ops = ops.slice(0, limit);
+    if (!numeric) {
+      out.accounts = (state.accounts || []).filter(function (a) {
+        return all([a.name, a.currency, (opts.kinds || {})[a.kind] || a.kind].join(' '));
+      });
+      var seen = {};
+      (state.investments || []).forEach(function (o) {
+        var t = String(o.ticker || '').toUpperCase(), k = o.assetType + '|' + t;
+        if (seen[k]) return;
+        var name = opts.metaName ? opts.metaName(o.assetType, t) : '';
+        if (all(t + ' ' + (name || ''))) { seen[k] = true; out.assets.push({ assetType: o.assetType, ticker: t, name: name || t }); }
+      });
+    }
+    return out;
+  }
+
   // =================================================================== Buscador de Por cobrar / Por pagar
   var SOURCE_NAME = { deuda: 'deuda prestamo', venta: 'venta', prestamo: 'prestamo', cambio: 'cambio divisas' };
   /**
@@ -1318,7 +1354,7 @@
     flowTransactions: flowTransactions,
     samePeg: samePeg,
     searchItems: searchItems, txAmount: txAmount,
-    ledger: ledger, ledgerIssues: ledgerIssues, ledgerSort: ledgerSort, ledgerFilter: ledgerFilter,
+    ledger: ledger, ledgerIssues: ledgerIssues, ledgerSort: ledgerSort, ledgerFilter: ledgerFilter, globalSearch: globalSearch,
     splitsOf: splitsOf, paySplits: paySplits, fxSplits: fxSplits, splitAmount: splitAmount, checkSplits: checkSplits,
     transferFee: transferFee,
     parseAmount: parseAmount, parseNum: parseNum,

@@ -62,7 +62,7 @@
     <div class="topbar-right">
       <span class="sync" id="sync-status" aria-live="polite"></span>
       <button type="button" class="icon-btn" data-action="toggle-privacy" id="privacy-btn" title="Ocultar montos" aria-label="Ocultar montos" aria-pressed="false"><svg class="ic"><use href="#i-eye"/></svg></button>
-      <button type="button" class="icon-btn" data-action="open-search" title="Buscar activo" aria-label="Buscar activo"><svg class="ic"><use href="#i-search"/></svg></button>
+      <button type="button" class="icon-btn" data-action="open-search" title="Buscar en toda la app (Ctrl+K)" aria-label="Buscar en toda la app"><svg class="ic"><use href="#i-search"/></svg></button>
       <button type="button" class="icon-btn" data-action="refresh" title="Actualizar precios" aria-label="Actualizar precios"><svg class="ic"><use href="#i-refresh"/></svg></button>
       <button type="button" class="icon-btn" data-goto="ajustes" id="settings-btn" title="Ajustes" aria-label="Ajustes"><svg class="ic"><use href="#i-gear"/></svg><span class="cloud-dot hidden" id="cloud-dot"></span></button>
     </div>
@@ -1022,6 +1022,18 @@
   <!-- Arrastrar hacia abajo para actualizar -->
   <div class="ptr" id="ptr" aria-hidden="true"><svg class="ic"><use href="#i-refresh"/></svg><span id="ptr-text">Suelta para actualizar</span></div>
 
+  <!-- Búsqueda global (la lupa) -->
+  <div class="gsearch hidden" id="gsearch" role="dialog" aria-modal="true" aria-label="Buscar en toda la app">
+    <div class="gsearch-panel">
+      <div class="gsearch-bar">
+        <div class="search"><svg class="ic"><use href="#i-search"/></svg>
+          <input id="gs-q" type="search" placeholder="Cliente, monto, nota, cuenta, activo…" autocomplete="off" enterkeyhint="search" aria-label="Buscar"></div>
+        <button type="button" class="link" data-action="gs-close">Cerrar</button>
+      </div>
+      <div class="gsearch-body" id="gs-results"></div>
+    </div>
+  </div>
+
   <!-- Registro rápido: botón «+» flotante y hoja inferior -->
   <button type="button" class="fab" id="fab" data-action="quick-open" aria-label="Registrar movimiento"><svg class="ic"><use href="#i-plus"/></svg></button>
   <div class="sheet-backdrop hidden" id="quick-backdrop" data-action="quick-close"></div>
@@ -1157,6 +1169,7 @@
   <script src="js/app/ficha-cuenta.js"></script>
   <script src="js/app/sincronizacion.js"></script>
   <script src="js/app/registro-rapido.js"></script>
+  <script src="js/app/busqueda.js"></script>
   <script src="js/app/eventos.js"></script>
   <script src="js/app/init.js"></script>
 </body>
