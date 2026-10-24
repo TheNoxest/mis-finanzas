@@ -138,15 +138,17 @@
   function stamp(state, prev, now) {
     now = now || Date.now();
     state.deleted = state.deleted || {};
-    var cur = {};
+    var cur = {}, marks = {};
     COLLECTIONS.forEach(function (k) {
       (state[k] || []).forEach(function (r) {
         var h = fingerprint(r);
         cur[r.id] = h;
         if (!prev) { if (!r._u) r._u = r.createdAt || 1; }
         else if (prev[r.id] !== h) { r._u = now; delete state.deleted[r.id]; }
+        marks[r.id] = r._u;
       });
     });
+    cur.__u = marks;   // marca de cada registro (para que la lápida de un borrado siempre sea más nueva)
     SINGLES.forEach(function (k) {
       var obj = state[k];
       if (!obj) return;
@@ -155,8 +157,13 @@
       if (!prev) { if (!obj._u) obj._u = 1; }
       else if (prev['__' + k] !== h) obj._u = now;
     });
+    // Borrados: la lápida debe ganarle a la última marca del registro. Si quedaba una lápida vieja
+    // (el registro se recuperó con «Deshacer» o al restaurar una copia), se renueva; antes se dejaba la
+    // vieja y la sincronización devolvía el registro borrado.
     if (prev) Object.keys(prev).forEach(function (id) {
-      if (id.indexOf('__') !== 0 && !cur[id] && !state.deleted[id]) state.deleted[id] = now;
+      if (id.indexOf('__') === 0 || cur[id]) return;
+      var t = Math.max(now, ((prev.__u || {})[id] || 0) + 1);
+      if (!(state.deleted[id] >= t)) state.deleted[id] = t;
     });
     return cur;
   }

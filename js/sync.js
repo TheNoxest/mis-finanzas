@@ -183,7 +183,12 @@
         if (!byId[r.id]) order.push(r.id);
         if (!byId[r.id] || (r._u || 0) > (byId[r.id]._u || 0)) byId[r.id] = r;
       });
-      out[k] = order.map(function (id) { return byId[id]; }).filter(function (r) { return !(del[r.id] && del[r.id] >= (r._u || 0)); });
+      out[k] = order.map(function (id) { return byId[id]; }).filter(function (r) {
+        if (!del[r.id]) return true;
+        if (del[r.id] >= (r._u || 0)) return false;
+        delete del[r.id];   // el registro sigue vivo (se editó o recuperó después): la lápida vieja sobra
+        return true;
+      });
     });
     ['settings', 'profile'].forEach(function (k) {
       var a = local[k], b = remote[k];

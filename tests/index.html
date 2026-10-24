@@ -341,6 +341,15 @@
     st0.accounts = [];
     Store.stamp(st0, h2, 300);
     eq('Al borrar, queda una lápida con la hora', st0.deleted, { a: 300 });
+    // Recuperado con «Deshacer» tras sincronizar: quedaba la lápida vieja (300) y al volver a borrarlo no se renovaba
+    var st1 = { accounts: [{ id: 'a', name: 'Banco', _u: 400 }], categories: [], methods: [], transactions: [], investments: [], debts: [], exchanges: [], settings: {}, profile: null, deleted: { a: 300 } };
+    var g1 = Store.stamp(st1, null, 450);
+    st1.accounts = []; Store.stamp(st1, g1, 500);
+    eq('Volver a borrar renueva la lápida vieja (300 → 500)', st1.deleted, { a: 500 });
+    var st2 = { accounts: [{ id: 'b', name: 'Caja', _u: 9000 }], categories: [], methods: [], transactions: [], investments: [], debts: [], exchanges: [], settings: {}, profile: null, deleted: {} };
+    var g2 = Store.stamp(st2, null, 600);
+    st2.accounts = []; Store.stamp(st2, g2, 700);
+    eq('Registro con marca adelantada (reloj de otro equipo, 9000): la lápida le gana (9001)', st2.deleted, { b: 9001 });
 
     var now0 = Date.now();
     var L = { accounts: [], categories: [], methods: [], investments: [], debts: [], exchanges: [], settings: { _u: now0 - 10, baseCurrency: 'USD' }, profile: null,
@@ -358,6 +367,13 @@
     eq('Ajustes: gana el más reciente; perfil y fotos diarias se suman', [M.settings.baseCurrency, M.profile.type, !!M.snapshots['2026-10-01']], ['USD', 'moderado', true]);
     eq('Precios: el más reciente por activo', M.prices['cripto|BTC'].price, 2);
     eq('Combinar es estable: combinar el resultado con lo remoto no cambia nada', JSON.stringify(Sync.merge(M, R).transactions), JSON.stringify(M.transactions));
+    // Caso de Elio (2026-10-24): transferencia recuperada que no se podía volver a borrar
+    var cloudU = { transactions: [{ id: 'tr', amount: 1900, _u: now0 - 500 }], deleted: { tr: now0 - 700 }, settings: { _u: 1 } };
+    var devU = Sync.merge({ transactions: [{ id: 'tr', amount: 1900, _u: now0 - 500 }], deleted: {}, settings: { _u: 1 } }, cloudU);
+    eq('Registro recuperado: sigue vivo y se quita la lápida vieja', [devU.transactions.length, devU.deleted], [1, {}]);
+    var hU = Store.stamp(devU, null, now0 - 400);
+    devU.transactions = []; Store.stamp(devU, hU, now0 - 300);
+    eq('Al volver a borrarlo, la nube ya no lo devuelve', Sync.merge(devU, cloudU).transactions.length, 0);
     eq('Un dispositivo recién instalado se detecta como «sin datos»', [Sync.isPristine(Store.defaults()), Sync.isPristine(L)], [true, false]);
 
     section('Copias y versiones (Sprint 0)');
