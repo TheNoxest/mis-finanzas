@@ -177,6 +177,7 @@
       var stA = C.loanStatus(upTo(parent, 'payments', pm), ctx && ctx.today);
       rows.push(row('Préstamo del', dateTxt(parent.date) + ' · ' + money(parent.principal, cur, L)));
       rows.push(row('Monto pagado', money(pm.amount, cur, L), true));
+      if (Number(pm.accAmount) > 0 && pm.accCurrency) rows.push(row('Pagado en ' + pm.accCurrency, money(pm.accAmount, pm.accCurrency, L) + ' (1 ' + cur + ' = ' + numTxt(pm.accAmount / pm.amount, L, 4) + ' ' + pm.accCurrency + ')'));
       if (split && split.interest > 0) rows.push(row('A intereses', money(split.interest, cur, L)));
       if (split) rows.push(row('A capital', money(split.capital, cur, L)));
       rows.push(row('Saldo pendiente', money(stA.pending, cur, L)));

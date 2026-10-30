@@ -310,6 +310,8 @@
             <label>Monto<input inputmode="decimal" autocomplete="off" name="amount" type="text"></label>
             <label>Fecha<input name="date" type="date"></label>
             <label class="span2"><span id="pay-acc-label">Entra en</span><select name="accountId"></select></label>
+            <label class="span2 hidden" id="pay-conv"><span id="pay-conv-label">Monto en la moneda de la cuenta</span><input inputmode="decimal" autocomplete="off" name="accAmount" type="text">
+              <small class="hint" id="pay-conv-hint"></small></label>
             <label class="span2">Nota<input name="note" maxlength="100" placeholder="Opcional"></label>
             <div class="span2 actions" style="margin-top:0"><button type="submit" class="primary" id="pay-submit">Registrar abono</button></div>
           </form>

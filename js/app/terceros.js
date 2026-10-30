@@ -235,8 +235,9 @@ function setPayEdit(action, id, label) {
 }
 function renderDebtPayments() {
   setPayEdit(null); setPayTools(null);
+  delete $('#pay-form').dataset.conv; $('#pay-conv').classList.add('hidden');
   if (payFx) { renderFxPayments(); return; }
-  if (payRef) { renderRefPayments(); return; }
+  if (payRef) { renderRefPayments(); syncPayConv(); return; }
   if (accTab !== 'cobrar' && accTab !== 'pagar') { $('#debt-payments').classList.add('hidden'); return; }
   var f = $('#debt-form'), card = $('#debt-payments');
   var d = f.editId.value ? byId(state.debts, f.editId.value) : null;

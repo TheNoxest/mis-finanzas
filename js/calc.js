@@ -227,8 +227,15 @@
     if (splits && splits.length) return splits.filter(function (s) { return s && s.accountId; });
     return accountId ? [{ accountId: accountId, amount: Number(amount) || 0 }] : [];
   }
-  /** Reparto de un pago, abono, cobro o entrega ({amount, accountId, splits?}). */
-  function paySplits(pm) { return splitsOf(pm.splits, pm.accountId, pm.amount); }
+  /**
+   * Reparto de un pago, abono, cobro o entrega ({amount, accountId, splits?}).
+   * Si se pagó desde una cuenta en otra moneda, accAmount/accCurrency = lo que realmente se movió en esa cuenta
+   * (el préstamo se abona por `amount`, en su moneda).
+   */
+  function paySplits(pm) {
+    if (!(pm.splits && pm.splits.length) && pm.accountId && Number(pm.accAmount) > 0) return [{ accountId: pm.accountId, amount: Number(pm.accAmount), currency: pm.accCurrency }];
+    return splitsOf(pm.splits, pm.accountId, pm.amount);
+  }
   /** Reparto de un lado de un cambio: 'in' (lo recibido) u 'out' (lo entregado). */
   function fxSplits(x, side) {
     return side === 'in' ? splitsOf(x.inSplits, x.inAccountId, x.received) : splitsOf(x.outSplits, x.outAccountId, x.delivered);
@@ -637,7 +644,9 @@
     var toB = function (v, c) { var r = toBase(v, c, rates); return isNaN(r) ? 0 : r; };
     var accCur = {};
     (state.accounts || []).forEach(function (a) { accCur[a.id] = a.currency; });
-    var signed = function (list, sign) { return list.map(function (x) { return { accountId: x.accountId, amount: round(sign * Number(x.amount), 2) }; }); };
+    var signed = function (list, sign) {
+      return list.map(function (x) { var o = { accountId: x.accountId, amount: round(sign * Number(x.amount), 2) }; if (x.currency) o.currency = x.currency; return o; });
+    };
     function push(r) {
       r.amount = round(Math.abs(Number(r.amount) || 0), 2);
       r.parts = r.parts || [];
@@ -768,6 +777,7 @@
         var a = acc[p.accountId];
         if (!a) { flag(r, 'cuenta_borrada'); return; }
         var cur = r.kind === 'cambio' ? null : r.kind === 'transferencia' ? (p.amount < 0 ? r.currency : r.extra.toCurrency || r.currency) : r.currency;
+        if (p.currency) cur = p.currency;   // pagado desde una cuenta en otra moneda (con su monto convertido)
         if (cur && !samePeg(a.currency, cur)) flag(r, 'moneda');
       });
       if ((r.kind === 'cobro_cambio' || r.kind === 'entrega_cambio') && !r.extra.mixed && r.extra.sideAccount &&

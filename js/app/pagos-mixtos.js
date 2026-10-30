@@ -114,11 +114,44 @@ function payTarget(f) {
   return mx || { accountId: f.accountId.value || null, splits: null };
 }
 function withSplits(obj, t) { if (t.splits) obj.splits = t.splits; return obj; }
+
+/**
+ * Pago desde una cuenta en otra moneda (préstamos): si la cuenta elegida no vale lo mismo que la moneda del préstamo
+ * (p. ej. préstamo en USD cobrado en Bs), aparece «Monto en VES», propuesto con la tasa actual y editable.
+ */
+function syncPayConv(changed) {
+  var pf = $('#pay-form'), box = $('#pay-conv'), cur = pf.dataset.cur, a = account(pf.accountId.value);
+  var mixed = !!$('#pay-form .mix-panel:not(.hidden)');
+  var show = !!(pf.dataset.conv && a && cur && !C.samePeg(a.currency, cur) && !mixed);
+  box.classList.toggle('hidden', !show);
+  if (!show) { delete pf.dataset.convTouched; pf.accAmount.value = ''; return; }
+  if (changed === 'account') delete pf.dataset.convTouched;
+  $('#pay-conv-label').textContent = 'Monto en ' + a.currency + ' (lo que se movió en ' + a.name + ')';
+  var amt = num(pf.amount.value);
+  if (!pf.dataset.convTouched) { var v = C.convert(amt, cur, a.currency, rates()); pf.accAmount.value = v > 0 ? C.round(v, 2) : ''; }
+  var acc = num(pf.accAmount.value);
+  $('#pay-conv-hint').textContent = amt > 0 && acc > 0 ? 'Tasa: 1 ' + cur + ' = ' + fmtNum(acc / amt, 0, 4) + ' ' + a.currency + '. Al préstamo se abonan ' + fmtMoney(amt, cur) + '.'
+    : 'Escribe cuánto entró o salió en ' + a.currency + '.';
+}
+/** Monto convertido del pago (o null si la cuenta es de la misma moneda). */
+function payConv(f) {
+  if ($('#pay-conv').classList.contains('hidden')) return null;
+  var a = account(f.accountId.value), v = num(f.accAmount.value);
+  if (!a) return null;
+  if (!(v > 0)) return { error: 'Escribe el monto en ' + a.currency };
+  return { accAmount: C.round(v, 2), accCurrency: a.currency };
+}
+/** Todas las cuentas: primero las de la moneda del préstamo, luego las de igual valor y después las demás (con su moneda). */
+function payAccountsAll(cur, noneLabel) {
+  var rank = function (a) { return a.currency === cur ? 0 : C.samePeg(a.currency, cur) ? 1 : 2; };
+  return [{ value: '', label: noneLabel }].concat(state.accounts.slice().sort(function (a, b) { return rank(a) - rank(b); })
+    .map(function (a) { return { value: a.id, label: a.name + (a.currency !== cur ? ' · ' + a.currency : '') }; }));
+}
 /** «Zelle» o, si fue mixto, «Zelle USD 60.00 + Efectivo USD 40.00». */
 function payAccText(pm, cur) {
   var list = C.paySplits(pm);
   if (!list.length) return 'sin cuenta';
-  if (list.length === 1) return esc(accName(list[0].accountId));
+  if (list.length === 1) return esc(accName(list[0].accountId)) + (list[0].currency ? ' (' + fmtMoney(list[0].amount, list[0].currency) + ')' : '');
   return list.map(function (s) { var ac = account(s.accountId); return esc(accName(s.accountId)) + ' ' + fmtMoney(s.amount, ac ? ac.currency : cur); }).join(' + ');
 }
 function bindMix() {

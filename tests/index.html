@@ -329,6 +329,18 @@
     eq('El saldo del banco no cambia por la custodia (se pagó desde ahí)', C.accountHoldings(moved, 'A').cash, 6212);
     eq('Suma de cuentas + activos = patrimonio sin terceros', C.round(['A', 'B', 'C', 'D'].reduce(function (s, id) { return s + C.accountHoldings(state, id).total; }, 0)), nw.total);
 
+    section('Préstamo cobrado en una cuenta de otra moneda');
+    var lnS = { settings: { baseCurrency: 'USD', rates: { USD: 1, VES: 0.0025, USDT: 1 } },
+      accounts: [{ id: 'Z', name: 'Zelle', currency: 'USD', initialBalance: 0 }, { id: 'BN', name: 'Binance', currency: 'USDT', initialBalance: 0 }, { id: 'BS', name: 'Banco Bs', currency: 'VES', initialBalance: 0 }],
+      transactions: [], investments: [], debts: [], exchanges: [], sales: [], brokerages: [],
+      loans: [{ id: 'L9', kind: 'otorgado', person: 'Pedro', principal: 100, currency: 'USD', date: '2026-10-01', accountId: 'Z', installments: 1, period: 'mensual', interest: { mode: 'ninguno' },
+        payments: [{ id: 'q1', date: '2026-10-10', amount: 40, accountId: 'BN' }, { id: 'q2', date: '2026-10-15', amount: 10, accountId: 'BS', accAmount: 3650, accCurrency: 'VES' }] }] };
+    var lnB = {}; C.accountBalances(lnS).forEach(function (a) { lnB[a.account.id] = a.balance; });
+    eq('Prestó 100 USD desde Zelle; cobró 40 en Binance (USDT) y 10 USD en Bs (3.650 Bs)', lnB, { Z: -100, BN: 40, BS: 3650 });
+    eq('Al préstamo se abonan 40 + 10 = 50 USD → quedan 50', C.loanStatus(lnS.loans[0], '2026-10-20').pending, 50);
+    var lnIss = C.ledgerIssues(C.ledger(lnS), lnS, '2026-10-20');
+    eq('El cobro en Bs no se marca como «moneda distinta» (lleva su monto convertido)', Object.keys(lnIss).filter(function (k) { return lnIss[k].indexOf('moneda') >= 0; }), []);
+
     section('Intermediación (compro a un cliente y vendo a otro)');
     var bq = C.brokerQuote({ amount: 100, buyRate: 1090, sellRate: 2000 });
     eq('100 USD: pago 100 × 1.090 = 109.000 Bs, cobro 100 × 2.000 = 200.000 Bs, diferencia 91.000 Bs', [bq.cost, bq.revenue, bq.diff], [109000, 200000, 91000]);

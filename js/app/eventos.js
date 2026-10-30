@@ -96,6 +96,11 @@ function bind() {
   $('#debt-form').addEventListener('submit', onDebtSubmit);
   $('#debt-form').currency.addEventListener('change', renderDebtAccountSelect);
   $('#pay-form').addEventListener('submit', onPaySubmit);
+  $('#pay-form').addEventListener('input', function (e) {
+    if (e.target.name === 'accAmount') { $('#pay-form').dataset.convTouched = '1'; syncPayConv(); }
+    else if (e.target.name === 'amount') syncPayConv();
+  });
+  $('#pay-form').addEventListener('change', function (e) { if (e.target.name === 'accountId' || e.target.closest('.mix-box')) syncPayConv('account'); });
   $$('input[name="debt-filter"]').forEach(function (r) { r.addEventListener('change', renderDebts); });
   $('#debt-search').addEventListener('input', renderDebts);
   var fxf = $('#fx-form');
