@@ -10,6 +10,7 @@ bind();
 $('#f-month').value = thisMonth();
 $('#lg-month').value = thisMonth();
 if (uiPrefs().histScope === 'all') $('#hs-all').checked = true;
+if (uiPrefs().histScope === 'pay') $('#hs-pay').checked = true;
 applyPrivacy();
 resetTxForm();
 resetInvForm();

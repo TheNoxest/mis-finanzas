@@ -181,7 +181,7 @@ function renderFxPayments() {
     sets.map(function (pm) {
       return '<li><span class="avatar ' + (c ? 'in' : 'out') + '">' + icon(c ? 'i-in' : 'i-out') + '</span><div class="main"><div class="title">' + fmtMoney(pm.amount, cur) + '</div>' +
         '<div class="sub">' + fmtDate(pm.date) + ' · ' + payAccText(pm, cur) + (pm.note ? ' · ' + esc(pm.note) : '') + '</div></div>' +
-        '<div class="row-actions"><button class="mini" data-rcpt="fx|' + x.id + '|' + pm.id + '" aria-label="Recibo">' + icon('i-doc') + '</button><button class="mini" data-del-settle="' + pm.id + '" aria-label="Eliminar">' + icon('i-x') + '</button></div></li>';
+        '<div class="row-actions"><button class="mini" data-pay-edit="fx|' + x.id + '|' + pm.id + '" aria-label="Editar">' + icon('i-edit') + '</button><button class="mini" data-rcpt="fx|' + x.id + '|' + pm.id + '" aria-label="Recibo">' + icon('i-doc') + '</button><button class="mini" data-del-settle="' + pm.id + '" aria-label="Eliminar">' + icon('i-x') + '</button></div></li>';
     }).join('');
   var pf = $('#pay-form');
   pf.classList.toggle('hidden', st.status === 'pagada');
@@ -254,7 +254,7 @@ function renderDebtPayments() {
     pays.map(function (pm) {
       return '<li><span class="avatar ' + (c ? 'in' : 'out') + '">' + icon(c ? 'i-in' : 'i-out') + '</span><div class="main"><div class="title">' + fmtMoney(pm.amount, d.currency) + '</div>' +
         '<div class="sub">' + fmtDate(pm.date) + ' · ' + payAccText(pm, d.currency) + (pm.note ? ' · ' + esc(pm.note) : '') + '</div></div>' +
-        '<div class="row-actions"><button class="mini" data-rcpt="debt|' + d.id + '|' + pm.id + '" aria-label="Recibo">' + icon('i-doc') + '</button><button class="mini" data-del-pay="' + pm.id + '" aria-label="Eliminar abono">' + icon('i-x') + '</button></div></li>';
+        '<div class="row-actions"><button class="mini" data-pay-edit="debt|' + d.id + '|' + pm.id + '" aria-label="Editar">' + icon('i-edit') + '</button><button class="mini" data-rcpt="debt|' + d.id + '|' + pm.id + '" aria-label="Recibo">' + icon('i-doc') + '</button><button class="mini" data-del-pay="' + pm.id + '" aria-label="Eliminar abono">' + icon('i-x') + '</button></div></li>';
     }).join('');
   var pf = $('#pay-form');
   pf.classList.toggle('hidden', bal.status === 'pagada');

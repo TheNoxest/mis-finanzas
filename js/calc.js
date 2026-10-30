@@ -834,6 +834,55 @@
     });
   }
 
+  // =================================================================== Historial de cobros y pagos
+  var PAY_SECTION = { cobro_cambio: 'cambio', entrega_cambio: 'cambio', cobro_venta: 'venta', cobro_prestamo: 'prestamo', pago_prestamo: 'prestamo',
+    abono_recibido: 'deuda', abono_pagado: 'deuda', cobro_intermediacion: 'intermediacion', pago_intermediacion: 'intermediacion' };
+  var OPEN_SECTION = { cambio: 'cambio', venta: 'venta', prestamo_dado: 'prestamo', prestamo_recibido: 'prestamo', deuda_cobrar: 'deuda', deuda_pagar: 'deuda' };
+  /**
+   * Cada cobro o pago con terceros (a partir de las filas de `ledger`): una fila por pago registrado y, si se pide, lo que se movió
+   * al crear la operación (cambio completado, venta de contado, capital de préstamo o deuda), separado en lo que entró y lo que salió.
+   * Fila: { key, date, createdAt, section, kind, person, concept, note, dir 'in'|'out', amount, currency, parts, sizeBase, atCreation, editable, ref }
+   */
+  function paymentRows(rows, withCreation) {
+    var out = [];
+    var mk = function (r, section, parts, atCreation, dir, amount, currency) {
+      return { key: r.key + (atCreation ? ':' + dir : ''), date: r.date, createdAt: r.createdAt, section: section, kind: r.kind, person: r.person || '',
+        concept: r.concept || '', note: r.note || '', dir: dir, amount: round(amount, 2), currency: currency, parts: parts,
+        sizeBase: r.sizeBase, atCreation: atCreation, editable: !!r.ref.pay, ref: r.ref, extra: r.extra || {} };
+    };
+    rows.forEach(function (r) {
+      if (PAY_SECTION[r.kind]) {
+        var net = sum(r.parts.map(function (p) { return p.amount; }));
+        var inKinds = { cobro_cambio: 1, cobro_venta: 1, cobro_prestamo: 1, abono_recibido: 1, cobro_intermediacion: 1 };
+        out.push(mk(r, PAY_SECTION[r.kind], r.parts, false, r.parts.length ? (net >= 0 ? 'in' : 'out') : (inKinds[r.kind] ? 'in' : 'out'), r.amount, r.currency));
+        return;
+      }
+      if (!withCreation || !OPEN_SECTION[r.kind] || !r.parts.length) return;
+      var e = r.extra || {};
+      var ins = r.parts.filter(function (p) { return p.amount > 0; }), outs = r.parts.filter(function (p) { return p.amount < 0; });
+      var tot = function (l) { return sum(l.map(function (p) { return Math.abs(p.amount); })); };
+      if (ins.length) out.push(mk(r, OPEN_SECTION[r.kind], ins, true, 'in', tot(ins), r.kind === 'cambio' ? e.inCurrency : r.currency));
+      if (outs.length) out.push(mk(r, OPEN_SECTION[r.kind], outs, true, 'out', tot(outs), r.kind === 'cambio' ? e.outCurrency : r.currency));
+    });
+    return out;
+  }
+  /** Filtra cobros y pagos: { from, to, person (contiene, sin tildes), min, max (monto), accountId, dir, section }. */
+  function paymentFilter(rows, o) {
+    o = o || {};
+    var pk = personKey(o.person || ''), min = Number(o.min), max = Number(o.max);
+    return rows.filter(function (r) {
+      if (o.from && r.date < o.from) return false;
+      if (o.to && r.date > o.to) return false;
+      if (o.section && r.section !== o.section) return false;
+      if (o.dir && r.dir !== o.dir) return false;
+      if (pk && personKey(r.person).indexOf(pk) < 0) return false;
+      if (o.min !== '' && o.min != null && !isNaN(min) && r.amount < min) return false;
+      if (o.max !== '' && o.max != null && !isNaN(max) && r.amount > max) return false;
+      if (o.accountId && !r.parts.some(function (p) { return p.accountId === o.accountId; })) return false;
+      return true;
+    });
+  }
+
   // =================================================================== Búsqueda global (la lupa)
   /**
    * Busca en toda la app. Devuelve grupos ya ordenados:
@@ -1517,7 +1566,7 @@
     flowTransactions: flowTransactions,
     samePeg: samePeg,
     searchItems: searchItems, txAmount: txAmount,
-    ledger: ledger, ledgerIssues: ledgerIssues, ledgerSort: ledgerSort, ledgerFilter: ledgerFilter, globalSearch: globalSearch,
+    ledger: ledger, ledgerIssues: ledgerIssues, ledgerSort: ledgerSort, ledgerFilter: ledgerFilter, paymentRows: paymentRows, paymentFilter: paymentFilter, globalSearch: globalSearch,
     splitsOf: splitsOf, paySplits: paySplits, fxSplits: fxSplits, splitAmount: splitAmount, checkSplits: checkSplits,
     transferFee: transferFee,
     parseAmount: parseAmount, parseNum: parseNum,

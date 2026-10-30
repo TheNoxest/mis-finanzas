@@ -168,6 +168,39 @@
         <div class="seg seg-sm hist-scope" role="radiogroup" aria-label="Qué historial ver">
           <input type="radio" name="hist-scope" id="hs-tx" value="tx" checked><label for="hs-tx">Ingresos y gastos</label>
           <input type="radio" name="hist-scope" id="hs-all" value="all"><label for="hs-all">Todas las operaciones</label>
+          <input type="radio" name="hist-scope" id="hs-pay" value="pay"><label for="hs-pay">Cobros y pagos</label>
+        </div>
+        <div id="hist-pay" class="hidden">
+          <h2>Cobros y pagos <small class="muted small">· de dónde sale y a dónde entra cada pago; ✎ para corregirlo</small></h2>
+          <div class="search" role="search" style="margin:8px 0">
+            <svg class="ic"><use href="#i-search"/></svg>
+            <input id="pg-person" data-people autocomplete="off" placeholder="Cliente (nombre o apellido)" aria-label="Filtrar por cliente">
+          </div>
+          <details class="pg-more-filters" id="pg-fbox"><summary>Más filtros <span class="muted" id="pg-fcount"></span></summary>
+          <div class="pg-filters">
+            <label>Desde<input type="date" id="pg-from"></label>
+            <label>Hasta<input type="date" id="pg-to"></label>
+            <label>Monto desde<input id="pg-min" inputmode="decimal" autocomplete="off" type="text" placeholder="0"></label>
+            <label>Monto hasta<input id="pg-max" inputmode="decimal" autocomplete="off" type="text" placeholder="sin límite"></label>
+            <label>Cuenta<select id="pg-account"></select></label>
+            <label>Entra o sale
+              <select id="pg-dir"><option value="">Entradas y salidas</option><option value="in">Solo lo que entra</option><option value="out">Solo lo que sale</option></select></label>
+            <label>Apartado
+              <select id="pg-section"><option value="">Todos</option><option value="cambio">Cambios</option><option value="intermediacion">Intermediación</option>
+                <option value="venta">Ventas</option><option value="prestamo">Préstamos</option><option value="deuda">Deudas</option></select></label>
+            <label>Ordenar
+              <select id="pg-sort"><option value="fecha">Fecha (reciente)</option><option value="fecha_asc">Fecha (antigua)</option><option value="persona">Cliente (A-Z)</option>
+                <option value="monto">Monto (mayor)</option><option value="monto_asc">Monto (menor)</option></select></label>
+          </div>
+          <label class="check" style="margin:8px 0 4px"><input type="checkbox" id="pg-created"><span>Incluir lo que se movió al crear la operación (cambios completados, ventas de contado, capital de préstamos)</span></label>
+          </details>
+          <div class="totals" id="pg-totals"></div>
+          <ul class="list ledger" id="pg-list"></ul>
+          <div class="actions" style="justify-content:space-between">
+            <button type="button" class="hidden" data-action="pg-more" id="pg-more">Ver más</button>
+            <button type="button" class="link hidden" data-action="pg-clear">Quitar filtros</button>
+            <button type="button" data-action="pg-csv">Descargar CSV</button>
+          </div>
         </div>
         <div id="hist-all" class="hidden">
           <h2>Historial completo <small class="muted small">· toca una para abrirla y corregirla</small></h2>
@@ -1157,6 +1190,29 @@
     </form>
   </dialog>
 
+  <!-- Editar un cobro o pago -->
+  <dialog id="pe-dialog" aria-labelledby="pe-title">
+    <form id="pe-form" class="form" autocomplete="off" novalidate>
+      <h2 id="pe-title">Editar pago</h2>
+      <p class="hint" id="pe-sub"></p>
+      <div class="grid">
+        <label>Fecha<input name="date" type="date"></label>
+        <label>Monto <span class="muted" id="pe-cur"></span><input inputmode="decimal" autocomplete="off" name="amount" type="text"></label>
+        <label class="span2"><span id="pe-acc-label">Cuenta</span><select name="accountId"></select></label>
+        <label class="span2 hidden" id="pe-conv"><span id="pe-conv-label">Monto en la moneda de la cuenta</span><input inputmode="decimal" autocomplete="off" name="accAmount" type="text">
+          <small class="hint" id="pe-conv-hint"></small></label>
+        <p class="span2 warning hidden" id="pe-mixed"></p>
+        <label class="span2">Nota<input name="note" maxlength="100" placeholder="Opcional"></label>
+      </div>
+      <div class="actions pe-actions">
+        <button type="button" class="danger" data-pe="delete">Eliminar</button>
+        <button type="button" class="ghost" data-pe="open">Ver operación</button>
+        <button type="button" class="ghost" data-pe="cancel">Cancelar</button>
+        <button type="submit" class="primary">Guardar</button>
+      </div>
+    </form>
+  </dialog>
+
   <!-- Comprobante -->
   <dialog id="receipt-dialog" class="receipt-dialog" aria-labelledby="rcpt-title">
     <div class="card-head"><h2 id="rcpt-title">Comprobante</h2>
@@ -1236,6 +1292,7 @@
   <script src="js/app/sincronizacion.js"></script>
   <script src="js/app/registro-rapido.js"></script>
   <script src="js/app/busqueda.js"></script>
+  <script src="js/app/pagos.js"></script>
   <script src="js/app/eventos.js"></script>
   <script src="js/app/init.js"></script>
 </body>

@@ -216,7 +216,7 @@ function renderBrokerPayments() {
     pays.map(function (pm) {
       return '<li><span class="avatar ' + (lg.dir === 'in' ? 'in' : 'out') + '">' + icon(lg.dir === 'in' ? 'i-in' : 'i-out') + '</span><div class="main"><div class="title">' + fmtMoney(pm.amount, lg.currency) + '</div>' +
         '<div class="sub">' + fmtDate(pm.date) + ' · ' + payAccText(pm, lg.currency) + (pm.note ? ' · ' + esc(pm.note) : '') + '</div></div>' +
-        '<div class="row-actions"><button class="mini" data-rcpt="broker|' + bk.id + '|' + pm.id + '" aria-label="Recibo">' + icon('i-doc') + '</button><button class="mini" data-del-ref-pay="' + pm.id + '" aria-label="Eliminar">' + icon('i-x') + '</button></div></li>';
+        '<div class="row-actions"><button class="mini" data-pay-edit="broker|' + bk.id + '|' + lg.role + ':' + pm.id + '" aria-label="Editar">' + icon('i-edit') + '</button><button class="mini" data-rcpt="broker|' + bk.id + '|' + pm.id + '" aria-label="Recibo">' + icon('i-doc') + '</button><button class="mini" data-del-ref-pay="' + pm.id + '" aria-label="Eliminar">' + icon('i-x') + '</button></div></li>';
     }).join('');
   setPayTools('broker', bk.id, !!lg && lg.dir === 'in' && lg.pending > 0);
   pf.classList.toggle('hidden', !lg || lg.status === 'pagada');

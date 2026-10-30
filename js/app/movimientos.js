@@ -149,10 +149,12 @@ function exportLedgerCSV() {
 }
 
 function renderTxList() {
-  var all = histScope() === 'all';
+  var sc = histScope(), all = sc === 'all', pay = sc === 'pay';
   $('#hist-all').classList.toggle('hidden', !all);
-  $('#hist-tx').classList.toggle('hidden', all);
+  $('#hist-pay').classList.toggle('hidden', !pay);
+  $('#hist-tx').classList.toggle('hidden', all || pay);
   if (all) { renderLedger(); return; }
+  if (pay) { renderPayHistory(); return; }
   var ym = $('#f-month').value, type = $('#f-type').value, acc = $('#f-account').value;
   var range = ym ? monthRange(ym) : {};
   var list = sortedTx().filter(function (t) {

@@ -74,7 +74,7 @@ function renderRefPayments() {
   $('#pay-list').innerHTML = html + list.map(function (pm) {
     return '<li><span class="avatar ' + (inflow ? 'in' : 'out') + '">' + icon(inflow ? 'i-in' : 'i-out') + '</span><div class="main"><div class="title">' + fmtMoney(pm.amount, cur) + '</div>' +
       '<div class="sub">' + fmtDate(pm.date) + ' · ' + payAccText(pm, cur) + (pm.note ? ' · ' + esc(pm.note) : '') + '</div></div>' +
-      '<div class="row-actions"><button class="mini" data-rcpt="' + (sale ? 'sale' : 'loan') + '|' + rec.id + '|' + pm.id + '" aria-label="Recibo">' + icon('i-doc') + '</button><button class="mini" data-del-ref-pay="' + pm.id + '" aria-label="Eliminar">' + icon('i-x') + '</button></div></li>';
+      '<div class="row-actions"><button class="mini" data-pay-edit="' + (sale ? 'sale' : 'loan') + '|' + rec.id + '|' + pm.id + '" aria-label="Editar">' + icon('i-edit') + '</button><button class="mini" data-rcpt="' + (sale ? 'sale' : 'loan') + '|' + rec.id + '|' + pm.id + '" aria-label="Recibo">' + icon('i-doc') + '</button><button class="mini" data-del-ref-pay="' + pm.id + '" aria-label="Eliminar">' + icon('i-x') + '</button></div></li>';
   }).join('');
   setPayTools(sale ? 'sale' : 'loan', rec.id, inflow && st.pending > 0);
   var closed = st.status === 'pagada' || (sale && rec.mode === 'contado');

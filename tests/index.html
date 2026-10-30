@@ -329,6 +329,27 @@
     eq('El saldo del banco no cambia por la custodia (se pagó desde ahí)', C.accountHoldings(moved, 'A').cash, 6212);
     eq('Suma de cuentas + activos = patrimonio sin terceros', C.round(['A', 'B', 'C', 'D'].reduce(function (s, id) { return s + C.accountHoldings(state, id).total; }, 0)), nw.total);
 
+    section('Historial de cobros y pagos');
+    var pr0 = C.paymentRows(C.ledger(lnS0()), false), pr1 = C.paymentRows(C.ledger(lnS0()), true);
+    function lnS0() {
+      return { settings: { baseCurrency: 'USD', rates: { USD: 1, VES: 0.0025, USDT: 1 } },
+        accounts: [{ id: 'Z', name: 'Zelle', currency: 'USD', initialBalance: 0 }, { id: 'BS', name: 'Banco Bs', currency: 'VES', initialBalance: 0 }],
+        transactions: [{ id: 't1', type: 'egreso', date: '2026-10-02', amount: 9, currency: 'USD', accountId: 'Z', categoryId: 'x' }], investments: [], exchanges: [], brokerages: [],
+        sales: [{ id: 's1', date: '2026-10-03', client: 'Ana López', concept: 'Zapatos', amount: 80, currency: 'USD', mode: 'credito', payments: [{ id: 'sp1', date: '2026-10-05', amount: 30, accountId: 'Z' }] }],
+        loans: [{ id: 'l1', kind: 'otorgado', person: 'Pedro', principal: 100, currency: 'USD', date: '2026-10-01', accountId: 'Z', installments: 1, period: 'mensual', interest: { mode: 'ninguno' },
+          payments: [{ id: 'lp1', date: '2026-10-10', amount: 10, accountId: 'BS', accAmount: 3650, accCurrency: 'VES' }] }],
+        debts: [{ id: 'd1', kind: 'pagar', person: 'Luis', amount: 50, currency: 'USD', date: '2026-10-04', payments: [{ id: 'dp1', date: '2026-10-08', amount: 20, accountId: 'Z' }] }] };
+    }
+    eq('Solo pagos: cobro de venta, cobro de préstamo y abono pagado (el gasto no es un pago)', pr0.map(function (r) { return r.kind; }).sort(), ['abono_pagado', 'cobro_prestamo', 'cobro_venta']);
+    var lp = pr0.filter(function (r) { return r.kind === 'cobro_prestamo'; })[0];
+    eq('Cobro del préstamo: entra, 10 USD al préstamo, 3.650 Bs en Banco Bs, se puede editar', [lp.dir, lp.amount, lp.currency, lp.parts[0].amount, lp.parts[0].currency, lp.editable, lp.section], ['in', 10, 'USD', 3650, 'VES', true, 'prestamo']);
+    eq('El abono a Luis sale de Zelle', (function (r) { return [r.dir, r.person, r.parts[0].accountId]; })(pr0.filter(function (r) { return r.kind === 'abono_pagado'; })[0]), ['out', 'Luis', 'Z']);
+    eq('Con lo movido al crear: + el capital prestado (sale 100 de Zelle, no editable aquí)', (function (r) { return [r.dir, r.amount, r.atCreation, r.editable]; })(pr1.filter(function (r) { return r.kind === 'prestamo_dado'; })[0]), ['out', 100, true, false]);
+    eq('Filtro por cliente sin tildes ni mayúsculas («lopez»)', C.paymentFilter(pr0, { person: 'lopez' }).map(function (r) { return r.kind; }), ['cobro_venta']);
+    eq('Filtro por monto 15 a 40 → 30 (venta) y 20 (abono)', C.paymentFilter(pr0, { min: 15, max: 40 }).map(function (r) { return r.amount; }).sort(), [20, 30]);
+    eq('Filtro: lo que entra en Zelle → solo el cobro de la venta', C.paymentFilter(pr0, { accountId: 'Z', dir: 'in' }).map(function (r) { return r.kind; }), ['cobro_venta']);
+    eq('Filtro por fechas 06/10–31/10 y apartado préstamos', C.paymentFilter(pr0, { from: '2026-10-06', to: '2026-10-31', section: 'prestamo' }).length, 1);
+
     section('Préstamo cobrado en una cuenta de otra moneda');
     var lnS = { settings: { baseCurrency: 'USD', rates: { USD: 1, VES: 0.0025, USDT: 1 } },
       accounts: [{ id: 'Z', name: 'Zelle', currency: 'USD', initialBalance: 0 }, { id: 'BN', name: 'Binance', currency: 'USDT', initialBalance: 0 }, { id: 'BS', name: 'Banco Bs', currency: 'VES', initialBalance: 0 }],

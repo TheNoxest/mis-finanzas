@@ -276,6 +276,10 @@ function bind() {
     if (!el) { openRow(e); return; }
     var d = el.dataset;
     if (receiptClick(d)) return;
+    if (d.payEdit) { var pe = d.payEdit.split('|'); openPayEdit(pe[0], pe[1], pe[2]); return; }
+    if (d.action === 'pg-more') { pgLimit += 150; renderPayHistory(); return; }
+    if (d.action === 'pg-csv') { exportPaymentsCSV(); return; }
+    if (d.action === 'pg-clear') { clearPayFilters(); return; }
     if (d.action === 'debt-search-all') { $('#df-all').checked = true; renderDebts(); return; }
     if (d.drDay) { drDay = drDay === d.drDay ? null : d.drDay; renderAnalysis(); return; }
     if (d.action === 'dr-close') { drDay = null; renderAnalysis(); return; }
