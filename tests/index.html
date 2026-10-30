@@ -329,6 +329,31 @@
     eq('El saldo del banco no cambia por la custodia (se pagó desde ahí)', C.accountHoldings(moved, 'A').cash, 6212);
     eq('Suma de cuentas + activos = patrimonio sin terceros', C.round(['A', 'B', 'C', 'D'].reduce(function (s, id) { return s + C.accountHoldings(state, id).total; }, 0)), nw.total);
 
+    section('Resultado por día (Análisis)');
+    var drT = [
+      { type: 'ingreso', date: '2026-10-01', amount: 100, currency: 'USD', categoryId: 'c1', accountId: 'A' },
+      { type: 'egreso', date: '2026-10-01', amount: 30, currency: 'USD', categoryId: 'c2', accountId: 'A' },
+      { type: 'egreso', date: '2026-10-02', amount: 50, currency: 'EUR', categoryId: 'c2', accountId: 'B' },
+      { type: 'ingreso', date: '2026-10-05', amount: 12, currency: 'USD', categoryId: '__cambios', accountId: 'A' },
+      { type: 'egreso', date: '2026-10-05', amount: 2, currency: 'USD', categoryId: '__cambios', accountId: 'A' },
+      { type: 'ingreso', date: '2026-10-31', amount: 40, currency: 'USD', categoryId: 'c1', accountId: 'A', splits: [{ accountId: 'A', amount: 25 }, { accountId: 'B', amount: 15 }] },
+      { type: 'transferencia', date: '2026-10-03', amount: 500, currency: 'USD' },
+      { type: 'ingreso', date: '2026-11-01', amount: 999, currency: 'USD', categoryId: 'c1', accountId: 'A' }
+    ];
+    var drR = { USD: 1, EUR: 1.1 };
+    var dr = C.dailyResult(drT, drR, '2026-10');
+    eq('Octubre tiene 31 días', dr.days.length, 31);
+    eq('1/10: 100 − 30 = +70', [dr.days[0].income, dr.days[0].expense, dr.days[0].net], [100, 30, 70]);
+    eq('2/10: gasto 50 EUR × 1,1 = −55', dr.days[1].net, -55);
+    eq('3/10: una transferencia no es ganancia ni pérdida', [dr.days[2].net, dr.days[2].count], [0, 0]);
+    eq('5/10: cambios 12 − 2 = +10 (fx = 10)', [dr.days[4].net, dr.days[4].fx], [10, 10]);
+    eq('Mes: ingresos 152, gastos 87, resultado +65, cambios +10', [dr.income, dr.expense, dr.net, dr.fx], [152, 87, 65, 10]);
+    eq('Días con ganancia 3 (1, 5 y 31), con pérdida 1 (2), con movimientos 4', [dr.gainDays, dr.lossDays, dr.activeDays], [3, 1, 4]);
+    eq('Mejor día 1/10 (+70), peor 2/10 (−55), promedio 65 ÷ 4 = 16,25', [dr.best.date, dr.worst.date, dr.avg], ['2026-10-01', '2026-10-02', 16.25]);
+    var drB = C.dailyResult(drT, drR, '2026-10', { accountId: 'B' });
+    eq('Solo la cuenta B: −55 el 2/10 y +15 (su parte) el 31/10 → −40', [drB.days[1].net, drB.days[30].net, drB.net], [-55, 15, -40]);
+    eq('Febrero de 2028 (bisiesto) tiene 29 días', C.dailyResult([], drR, '2028-02').days.length, 29);
+
     section('Sincronización: marcas de cambio y combinación');
     var st0 = { accounts: [{ id: 'a', name: 'Banco' }], categories: [], methods: [], transactions: [], investments: [], debts: [], exchanges: [], settings: { baseCurrency: 'USD' }, profile: null };
     var h0 = Store.stamp(st0, null, 100);

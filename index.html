@@ -757,6 +757,24 @@
         <details class="table-toggle"><summary>Ver tabla</summary><div class="table-wrap" id="cf-table"></div></details>
       </div>
 
+      <div class="card" id="daily-card">
+        <div class="card-head wrap">
+          <h2>Resultado por día</h2>
+          <div class="dr-nav">
+            <button type="button" class="icon-btn" data-action="dr-prev" aria-label="Mes anterior">‹</button>
+            <select id="dr-month" aria-label="Mes"></select>
+            <button type="button" class="icon-btn" data-action="dr-next" aria-label="Mes siguiente">›</button>
+          </div>
+        </div>
+        <p class="hint">Ganancia o pérdida de cada día = ingresos − gastos (incluye la ganancia de cambios, ventas, intereses y comisiones). Toca un día para ver qué pasó.</p>
+        <div class="stat-tiles" id="dr-kpis"></div>
+        <div class="dr-cal" id="dr-cal"></div>
+        <div class="dr-detail hidden" id="dr-detail"></div>
+        <div class="legend" id="dr-legend"></div>
+        <div class="chart" id="dr-chart"></div>
+        <details class="table-toggle"><summary>Ver tabla</summary><div class="table-wrap" id="dr-table"></div></details>
+      </div>
+
       <div class="card">
         <div class="card-head wrap">
           <h2 id="cat-title">Gasto por categoría</h2>

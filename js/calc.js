@@ -1261,6 +1261,49 @@
   }
 
   /**
+   * Resultado de cada día de un mes 'AAAA-MM' (moneda base): ingresos, gastos, neto (= ingresos − gastos) y
+   * ganancia de cambios (`fx`, categoría virtual __cambios). Usar con flowTransactions (incluye cambios, ventas,
+   * intereses y comisiones). opts: { categoryId, accountId } como en el resto del análisis.
+   * Devuelve { month, days:[{date, income, expense, net, fx, count}], income, expense, net, fx,
+   *            gainDays, lossDays, activeDays, best, worst (días con movimientos), avg (neto ÷ días con movimientos) }.
+   */
+  function dailyResult(transactions, rates, ym, opts) {
+    opts = opts || {};
+    var from = ym + '-01', to = lastDayOfMonth(ym);
+    var o = { from: from, to: to, categoryId: opts.categoryId, accountId: opts.accountId };
+    var map = {}, days = [];
+    for (var d = from; d <= to; d = addDays(d, 1)) { map[d] = { date: d, inc: [], exp: [], fx: [], count: 0 }; days.push(map[d]); }
+    transactions.forEach(function (t) {
+      if ((t.type !== 'ingreso' && t.type !== 'egreso') || !matches(t, o)) return;
+      var v = toBase(txAmount(t, o), t.currency, rates), x = map[t.date];
+      if (!x || isNaN(v)) return;
+      (t.type === 'ingreso' ? x.inc : x.exp).push(v);
+      if (t.categoryId === '__cambios') x.fx.push(t.type === 'ingreso' ? v : -v);
+      x.count++;
+    });
+    days = days.map(function (x) {
+      var income = sum(x.inc), expense = sum(x.exp);
+      return { date: x.date, income: income, expense: expense, net: round(income - expense, 2), fx: sum(x.fx), count: x.count };
+    });
+    var active = days.filter(function (x) { return x.count > 0; });
+    var pick = function (better) { return active.reduce(function (a, x) { return !a || better(x.net, a.net) ? x : a; }, null); };
+    var out = {
+      month: ym, days: days,
+      income: sum(days.map(function (x) { return x.income; })),
+      expense: sum(days.map(function (x) { return x.expense; })),
+      fx: sum(days.map(function (x) { return x.fx; })),
+      gainDays: days.filter(function (x) { return x.net > 0; }).length,
+      lossDays: days.filter(function (x) { return x.net < 0; }).length,
+      activeDays: active.length,
+      best: pick(function (a, b) { return a > b; }),
+      worst: pick(function (a, b) { return a < b; })
+    };
+    out.net = round(out.income - out.expense, 2);
+    out.avg = active.length ? round(out.net / active.length, 2) : 0;
+    return out;
+  }
+
+  /**
    * Total por categoría con participación y comparación contra el periodo anterior.
    * share = total / suma × 100 ; change = (total − anterior) / anterior × 100 (null si anterior = 0)
    */
@@ -1358,7 +1401,7 @@
     splitsOf: splitsOf, paySplits: paySplits, fxSplits: fxSplits, splitAmount: splitAmount, checkSplits: checkSplits,
     transferFee: transferFee,
     parseAmount: parseAmount, parseNum: parseNum,
-    seriesDates: seriesDates, monthlyCashflow: monthlyCashflow, categoryBreakdown: categoryBreakdown,
+    seriesDates: seriesDates, monthlyCashflow: monthlyCashflow, dailyResult: dailyResult, categoryBreakdown: categoryBreakdown,
     netWorthSeries: netWorthSeries
   };
 

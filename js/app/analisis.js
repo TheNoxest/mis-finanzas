@@ -127,6 +127,7 @@ function renderAnalysis() {
         [COLORS.net, 'Neto', fmtSigned(m.net, b)], ['', 'Ahorro', m.savingsRate == null ? '—' : fmtNum(m.savingsRate, 0, 1) + ' %']]);
     }
   });
+  renderDaily(r, opts);
   $('#cf-table').innerHTML = table(['Mes', 'Ingresos', 'Gastos', 'Neto', 'Ahorro'],
     cf.map(function (m) { return [monthLong(m.month), fmtMoney(m.income, b), fmtMoney(m.expense, b), fmtSigned(m.net, b), m.savingsRate == null ? '—' : fmtNum(m.savingsRate, 0, 1) + ' %']; }),
     ['Total', fmtMoney(s.income, b), fmtMoney(s.expense, b), fmtSigned(s.net, b), s.income > 0 ? fmtNum(s.savingsRate, 0, 1) + ' %' : '—']);
@@ -224,6 +225,96 @@ function renderAnalysis() {
 }
 
 // ================================================================ proyección de patrimonio
+// ================================================================ resultado por día
+var drMonth = null;   // mes elegido en la tarjeta (null = el último mes del periodo de análisis)
+var drDay = null;     // día abierto en el calendario
+function fmtCompactSigned(v) { return (v > 0 ? '+' : v < 0 ? '−' : '') + fmtCompact(Math.abs(v)); }
+/** Meses con datos (del primer movimiento a hoy), del más nuevo al más viejo. */
+function drMonths() {
+  var today = S.today(), first = today;
+  flows().forEach(function (t) { if (t.date && t.date < first) first = t.date; });
+  return C.monthsBetween(first.slice(0, 7), today.slice(0, 7)).reverse();
+}
+function renderDaily(r, opts) {
+  var b = base(), today = S.today(), months = drMonths();
+  var ym = drMonth || r.to.slice(0, 7);
+  if (ym > today.slice(0, 7)) ym = today.slice(0, 7);
+  if (months.indexOf(ym) < 0) months.unshift(ym);
+  var sel = $('#dr-month');
+  sel.innerHTML = months.map(function (m) { return '<option value="' + m + '">' + esc(monthLong(m)) + '</option>'; }).join('');
+  sel.value = ym;
+  $('[data-action="dr-prev"]').disabled = months.indexOf(ym) === months.length - 1;
+  $('[data-action="dr-next"]').disabled = months.indexOf(ym) === 0;
+
+  var dr = C.dailyResult(flows(), rates(), ym, { categoryId: opts.categoryId, accountId: opts.accountId });
+  var tile = function (k, v, d) { return '<div class="stat-tile"><div class="k">' + k + '</div><div class="v">' + v + '</div><div class="d">' + d + '</div></div>'; };
+  var dayVal = function (x) { return x ? '<span class="' + trend(x.net) + '">' + fmtSigned(x.net, b) + '</span>' : '—'; };
+  var best = dr.best && dr.best.net > 0 ? dr.best : null, worst = dr.worst && dr.worst.net < 0 ? dr.worst : null;
+  $('#dr-kpis').innerHTML =
+    tile('Resultado del mes', '<span class="' + trend(dr.net) + '">' + fmtSigned(dr.net, b) + '</span>',
+      dr.fx ? 'Cambios: ' + fmtSigned(dr.fx, b) : (dr.activeDays ? '' : 'Sin movimientos')) +
+    tile('Días', dr.gainDays + ' con ganancia', dr.lossDays + ' con pérdida' + (dr.activeDays ? ' · promedio ' + fmtSigned(dr.avg, b) + ' por día con movimientos' : '')) +
+    tile('Mejor día', dayVal(best), best ? fmtLong(best.date) : 'Ningún día con ganancia') +
+    tile('Peor día', dayVal(worst), worst ? fmtLong(worst.date) : 'Ningún día con pérdida');
+
+  // Calendario (semanas de lunes a domingo)
+  var lead = (new Date(ym + '-01T12:00').getDay() + 6) % 7;
+  var cells = ['L', 'M', 'X', 'J', 'V', 'S', 'D'].map(function (w) { return '<div class="dr-wd">' + w + '</div>'; });
+  for (var i = 0; i < lead; i++) cells.push('<div class="dr-pad"></div>');
+  if (drDay && drDay.slice(0, 7) !== ym) drDay = null;
+  dr.days.forEach(function (x) {
+    var fut = x.date > today, cls = 'dr-day' + (x.net > 0 ? ' gain' : x.net < 0 ? ' loss' : '') + (fut ? ' future' : '') +
+      (x.date === today ? ' today' : '') + (x.date === drDay ? ' sel' : '');
+    var label = Number(x.date.slice(8)) + ' de ' + monthLong(ym) + ': ' + (x.count ? (x.net >= 0 ? 'ganancia ' : 'pérdida ') + fmtMoney(Math.abs(x.net), b) : 'sin movimientos');
+    cells.push('<button type="button" class="' + cls + '" data-dr-day="' + x.date + '"' + (x.count ? '' : ' disabled') + ' aria-label="' + esc(label) + '">' +
+      '<span class="n">' + Number(x.date.slice(8)) + '</span>' + (x.count ? '<span class="v">' + fmtCompactSigned(x.net) + '</span>' : '') + '</button>');
+  });
+  $('#dr-cal').innerHTML = cells.join('');
+  renderDailyDetail(dr, opts);
+
+  // Gráfico: barras del neto de cada día (azul = ganancia, naranja = pérdida)
+  $('#dr-legend').innerHTML = legendHtml([
+    { label: 'Día con ganancia', color: COLORS.income }, { label: 'Día con pérdida', color: COLORS.expense }]);
+  Charts.bars($('#dr-chart'), {
+    labels: dr.days.map(function (x) { return String(Number(x.date.slice(8))); }),
+    series: [{ label: 'Resultado', color: COLORS.income, values: dr.days.map(function (x) { return x.net; }),
+      colorOf: function (v) { return v < 0 ? COLORS.expense : COLORS.income; } }],
+    yFormat: fmtCompact, height: 190, ariaLabel: 'Ganancia o pérdida de cada día de ' + monthLong(ym),
+    tooltip: function (i) {
+      var x = dr.days[i];
+      return tipHtml(fmtLong(x.date), [[x.net < 0 ? COLORS.expense : COLORS.income, 'Resultado', fmtSigned(x.net, b)],
+        ['', 'Ingresos', fmtMoney(x.income, b)], ['', 'Gastos', fmtMoney(x.expense, b)]].concat(x.fx ? [['', 'Cambios', fmtSigned(x.fx, b)]] : []));
+    }
+  });
+  var act = dr.days.filter(function (x) { return x.count; });
+  $('#dr-table').innerHTML = act.length ? table(['Día', 'Ingresos', 'Gastos', 'Cambios', 'Resultado'],
+    act.map(function (x) { return [fmtLong(x.date), fmtMoney(x.income, b), fmtMoney(x.expense, b), x.fx ? fmtSigned(x.fx, b) : '—', '<span class="' + trend(x.net) + '">' + fmtSigned(x.net, b) + '</span>']; }),
+    ['Total', fmtMoney(dr.income, b), fmtMoney(dr.expense, b), dr.fx ? fmtSigned(dr.fx, b) : '—', '<span class="' + trend(dr.net) + '">' + fmtSigned(dr.net, b) + '</span>'])
+    : '<p class="muted">Sin movimientos en este mes.</p>';
+}
+/** Lo que pasó el día elegido (ingresos y gastos, en la moneda base). */
+function renderDailyDetail(dr, opts) {
+  var box = $('#dr-detail'), b = base();
+  var x = drDay && dr.days.filter(function (d) { return d.date === drDay; })[0];
+  if (!x || !x.count) { box.classList.add('hidden'); box.innerHTML = ''; return; }
+  var o = { from: drDay, to: drDay, categoryId: opts.categoryId, accountId: opts.accountId };
+  var items = flows().filter(function (t) {
+    return (t.type === 'ingreso' || t.type === 'egreso') && t.date === drDay && (!o.categoryId || t.categoryId === o.categoryId) &&
+      (!o.accountId || t.accountId === o.accountId || (t.splits || []).some(function (s) { return s.accountId === o.accountId; }));
+  }).map(function (t) {
+    var amt = o.accountId && t.splits && t.splits.length ? C.splitAmount(t.splits, o.accountId) : Number(t.amount);
+    return { t: t, v: C.toBase(amt, t.currency, rates()) * (t.type === 'ingreso' ? 1 : -1) };
+  }).sort(function (a, z) { return Math.abs(z.v) - Math.abs(a.v); });
+  box.classList.remove('hidden');
+  box.innerHTML = '<div class="dr-detail-head"><b>' + esc(fmtLong(drDay)) + '</b> · <span class="' + trend(x.net) + '">' + fmtSigned(x.net, b) + '</span>' +
+    '<button type="button" class="link" data-action="dr-close">Cerrar</button></div><ul class="list">' + items.map(function (it) {
+      var t = it.t, sub = [t.synthetic ? '' : accName(t.accountId), t.note || ''].filter(Boolean).join(' · ');
+      return '<li><span class="avatar ' + (it.v >= 0 ? 'in' : 'out') + '">' + icon(it.v >= 0 ? 'i-in' : 'i-out') + '</span>' +
+        '<div class="main"><div class="title">' + esc(catName(t.categoryId)) + '</div>' + (sub ? '<div class="sub">' + esc(sub) + '</div>' : '') + '</div>' +
+        '<div class="amt"><span class="' + trend(it.v) + '">' + fmtSigned(it.v, b) + '</span></div></li>';
+    }).join('') + '</ul>';
+}
+
 var PROJ = [{ rate: 2, label: 'Conservador', color: 'var(--s3)' }, { rate: 5, label: 'Moderado', color: 'var(--s1)' }, { rate: 8, label: 'Optimista', color: 'var(--s4)' }];
 function projDefaults() {
   var avg = Advisor.monthlyAverages(state, S.today(), 6);

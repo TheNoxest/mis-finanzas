@@ -268,6 +268,13 @@ function bind() {
     var d = el.dataset;
     if (receiptClick(d)) return;
     if (d.action === 'debt-search-all') { $('#df-all').checked = true; renderDebts(); return; }
+    if (d.drDay) { drDay = drDay === d.drDay ? null : d.drDay; renderAnalysis(); return; }
+    if (d.action === 'dr-close') { drDay = null; renderAnalysis(); return; }
+    if (d.action === 'dr-prev' || d.action === 'dr-next') {
+      var drm = drMonths(), dri = drm.indexOf($('#dr-month').value) + (d.action === 'dr-prev' ? 1 : -1);
+      if (drm[dri]) { drMonth = drm[dri]; drDay = null; renderAnalysis(); }
+      return;
+    }
     if (d.goto) showView(d.goto);
     else if (d.action === 'open-search') openGlobalSearch();   // lupa de arriba: búsqueda en toda la app (app/busqueda.js)
     else if (d.action === 'asset-back') showView('inversiones');
@@ -471,6 +478,8 @@ function bind() {
 
   // Análisis: filtros y redimensionado
   ['#a-range', '#a-from', '#a-to', '#a-category', '#a-account', '#a-asset'].forEach(function (sel) { $(sel).addEventListener('change', renderAnalysis); });
+  $('#a-range').addEventListener('change', function () { drMonth = null; drDay = null; renderAnalysis(); });
+  $('#dr-month').addEventListener('change', function (e) { drMonth = e.target.value; drDay = null; renderAnalysis(); });
   $$('input[name="cat-type"]').forEach(function (r) { r.addEventListener('change', renderAnalysis); });
   $('#a-clear').addEventListener('click', function () {
     $('#a-category').value = ''; $('#a-account').value = ''; $('#a-asset').value = ''; renderAnalysis();

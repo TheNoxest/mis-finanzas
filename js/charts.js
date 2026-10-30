@@ -116,7 +116,7 @@
       s.values.forEach(function (v, i) {
         if (v == null || v === 0) return;
         var x = cx(i) - gw / 2 + si * (bw + gap);
-        el('path', { d: barPath(x, y(0), y(v), bw), style: 'fill:' + s.color }, f.svg);
+        el('path', { d: barPath(x, y(0), y(v), bw), style: 'fill:' + (s.colorOf ? s.colorOf(v, i) : s.color) }, f.svg);
       });
     });
 
