@@ -224,7 +224,11 @@ function bind() {
     var hi = e.target.closest('[data-hist]');
     if (hi) { var hp = hi.dataset.hist.split('|'); openHistItem(hp[0], hp[1]); return true; }
     var pref = e.target.closest('[data-pay-ref]');
-    if (pref) { var pr = pref.dataset.payRef.split('|'); openRef(pr[0], pr[1], { stay: accTab === 'cobrar' || accTab === 'pagar' }); return true; }
+    if (pref) { var pr = pref.dataset.payRef.split('|'); openRef(pr[0], pr[1], { stay: accTab === 'cobrar' || accTab === 'pagar', leg: pr[2] }); return true; }
+    var obr = e.target.closest('[data-open-br]');
+    if (obr) { openRef('broker', obr.dataset.openBr); return true; }
+    var brl = e.target.closest('[data-br-leg]');
+    if (brl && payRef && payRef.kind === 'broker') { payRef.leg = brl.dataset.brLeg; $('#pay-form').dataset.debt = ''; renderThirdParty(); return true; }
     var esv = e.target.closest('[data-edit-sale]');
     if (esv) { editSale(esv.dataset.editSale); return true; }
     var sfx = e.target.closest('[data-settle-fx]');
@@ -238,7 +242,7 @@ function bind() {
     if (row.dataset.editTx) editTx(row.dataset.editTx); else editInv(row.dataset.editInv);
     return true;
   }
-  document.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target.matches('li[data-edit-tx], li[data-edit-inv], [data-open-asset], li[data-open-debt], li[data-open-fx], li[data-settle-fx], li[data-pay-ref], li[data-edit-sale], li[data-person], li[data-hist], li[data-lg], [data-open-account]')) openRow(e); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target.matches('li[data-edit-tx], li[data-edit-inv], [data-open-asset], li[data-open-debt], li[data-open-fx], li[data-settle-fx], li[data-pay-ref], li[data-open-br], li[data-br-leg], li[data-edit-sale], li[data-person], li[data-hist], li[data-lg], [data-open-account]')) openRow(e); });
   $$('input[name="ex-tab"]').forEach(function (r) { r.addEventListener('change', function () { explore.tab = r.value; renderExplore(); }); });
   $('#ex-fit').addEventListener('change', renderExplore);
 
@@ -352,6 +356,9 @@ function bind() {
     else if (d.action === 'fx-recalc') { delete $('#fx-form').dataset.deliveredTouched; syncFxForm(); }
     else if (d.action === 'del-cost') { el.closest('.cost-row').remove(); syncFxForm(); }
     else if (d.action === 'cancel-fx') { resetFxForm(); renderExchanges(); }
+    else if (d.action === 'cancel-br') { resetBrForm(); renderExchanges(); }
+    else if (d.action === 'delete-br') { deleteBroker(); }
+    else if (d.action === 'br-edit') { editBroker(d.id); }
     else if (d.action === 'delete-fx') {
       var xx = byId(state.exchanges, $('#fx-form').editId.value);
       if (xx && confirm('¿Eliminar este cambio? Los saldos de las cuentas se recalculan.')) {

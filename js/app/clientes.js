@@ -64,7 +64,7 @@ function chooseSuggest(i) {
 }
 
 // ---- Pestaña Clientes
-var HIST_LABEL = { cambio: 'Cambio', venta: 'Venta', prestamo: 'Préstamo', deuda: 'Deuda' };
+var HIST_LABEL = { cambio: 'Cambio', intermediacion: 'Intermediación', venta: 'Venta', prestamo: 'Préstamo', deuda: 'Deuda' };
 function histItemHtml(h) {
   var r = h.rec, title, tag = '', amt, icn = 'i-swap', av = 'tr';
   if (h.kind === 'cambio') {
@@ -72,6 +72,11 @@ function histItemHtml(h) {
     tag = h.status === 'completada' ? '' : '<span class="tag warn">' + (C.exchangeSettlement(r).side === 'in' ? 'Falta cobrar ' : 'Falta entregar ') + fmtMoney(h.pending, h.pendingCurrency) + '</span>';
     var pr = C.exchangeProfit(r, rates()).profit;
     amt = '<span class="' + (h.status === 'completada' ? trend(pr) : 'muted') + '">' + fmtSigned(pr, base()) + '</span><div class="sub">' + (h.status === 'completada' ? 'ganancia' : 'prevista') + '</div>';
+  } else if (h.kind === 'intermediacion') {
+    var bq = C.brokerQuote(r), bp = C.toBase(bq.profit, r.asset, rates());
+    title = (h.role === 'vende' ? 'Te vendió ' : 'Te compró ') + fmtMoney(r.amount, r.asset) + ' a ' + fmtNum(h.role === 'vende' ? r.buyRate : r.sellRate, 0, 4) + ' ' + esc(r.payCurrency);
+    tag = h.status === 'completada' ? '' : h.pending > 0 ? '<span class="tag warn">' + (h.legDir === 'in' ? 'Falta cobrar ' : h.leg === 'asset_out' ? 'Falta entregar ' : 'Falta pagar ') + fmtMoney(h.pending, h.pendingCurrency) + '</span>' : '<span class="tag">En curso</span>';
+    amt = '<span class="' + (h.status === 'completada' ? trend(bp) : 'muted') + '">' + fmtSigned(isNaN(bp) ? bq.profit : bp, isNaN(bp) ? r.asset : base()) + '</span><div class="sub">' + (h.status === 'completada' ? 'ganancia' : 'prevista') + '</div>';
   } else if (h.kind === 'venta') {
     icn = 'i-in'; av = 'in';
     title = r.concept ? esc(r.concept) : 'Venta';
@@ -144,6 +149,7 @@ function openHistItem(kind, id) {
   if (kind === 'cambio') { var x = byId(state.exchanges, id), st = x && C.exchangeSettlement(x); if (st && st.status !== 'pagada') openFxSettle(id); else editFx(id); }
   else if (kind === 'venta') { var sv = byId(state.sales, id); if (sv && sv.mode === 'credito') openRef('sale', id); else editSale(id); }
   else if (kind === 'prestamo') openRef('loan', id);
+  else if (kind === 'intermediacion') openRef('broker', id);
   else if (kind === 'deuda') editDebt(id);
 }
 /** Empieza una operación nueva con el nombre del cliente ya escrito. */
@@ -172,7 +178,7 @@ function editContact() {
 /** Cambia el nombre en todas las operaciones de una persona (y une historiales si el nombre nuevo ya existía). */
 function renamePerson(oldKey, name) {
   var n = 0, fix = function (list, field) { (list || []).forEach(function (r) { if (C.personKey(r[field]) === oldKey && r[field] !== name) { r[field] = name; n++; } }); };
-  fix(state.debts, 'person'); fix(state.exchanges, 'client'); fix(state.sales, 'client'); fix(state.loans, 'person'); fix(state.contacts, 'name');
+  fix(state.debts, 'person'); fix(state.exchanges, 'client'); fix(state.sales, 'client'); fix(state.loans, 'person'); fix(state.brokerages, 'seller'); fix(state.brokerages, 'buyer'); fix(state.contacts, 'name');
   return n;
 }
 function onContactSubmit(e) {

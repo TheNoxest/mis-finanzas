@@ -36,7 +36,7 @@ function initials(name) { return esc(String(name || '?').trim().split(/\s+/).sli
 // ---------- Por cobrar / por pagar ----------
 function dueTag(it) {
   if (it.status === 'pagada') return '<span class="tag ok">Saldada</span>';
-  var t = it.source === 'cambio' ? '<span class="tag info">Cambio</span> ' : it.source === 'venta' ? '<span class="tag info">Venta</span> ' : it.source === 'prestamo' ? '<span class="tag info">Préstamo</span> ' : '';
+  var t = it.source === 'cambio' ? '<span class="tag info">Cambio</span> ' : it.source === 'intermediacion' ? '<span class="tag info">Intermediación</span> ' : it.source === 'venta' ? '<span class="tag info">Venta</span> ' : it.source === 'prestamo' ? '<span class="tag info">Préstamo</span> ' : '';
   if (it.overdue) return t + '<span class="tag danger">Vencida hace ' + Math.abs(it.daysToDue) + ' d</span>';
   if (it.daysToDue === 0) return t + '<span class="tag warn">Vence hoy</span>';
   if (it.daysToDue != null && it.daysToDue <= 7) return t + '<span class="tag warn">Vence en ' + it.daysToDue + ' d</span>';
@@ -76,8 +76,9 @@ function renderDebts() {
   var editing = $('#debt-form').editId.value;
   $('#debt-list').innerHTML = list.length ? list.map(function (it) {
     var attr = it.source === 'cambio' ? 'data-settle-fx="' + it.id + '"' : it.source === 'venta' ? 'data-pay-ref="sale|' + it.id + '"'
+      : it.source === 'intermediacion' ? 'data-pay-ref="broker|' + it.id + '|' + it.leg + '"'
       : it.source === 'prestamo' ? 'data-pay-ref="loan|' + it.id + '"' : 'data-open-debt="' + it.id + '"';
-    var isEditing = it.source === 'cambio' ? payFx === it.id : (it.source === 'venta' || it.source === 'prestamo') ? !!payRef && payRef.id === it.id : editing === it.id;
+    var isEditing = it.source === 'cambio' ? payFx === it.id : it.source === 'intermediacion' ? !!payRef && payRef.id === it.id && payRef.leg === it.leg : (it.source === 'venta' || it.source === 'prestamo') ? !!payRef && payRef.id === it.id : editing === it.id;
     return '<li class="clickable' + (isEditing ? ' editing' : '') + '" ' + attr + ' tabindex="0" role="button">' +
       '<span class="avatar">' + initials(it.person) + '</span>' +
       '<div class="main"><div class="title">' + esc(it.person || 'Sin nombre') + ' ' + dueTag(it) + '</div>' +

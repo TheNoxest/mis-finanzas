@@ -169,6 +169,7 @@ function resetFxForm() {
 }
 
 function editFx(id) {
+  setFxKind('normal');
   var x = byId(state.exchanges, id); if (!x) return;
   if (accTab !== 'cambios') showView('cuentas/cambios');
   var f = $('#fx-form');
@@ -289,6 +290,12 @@ function renderExchanges() {
       com: C.sum(pr.map(function (p) { return p.commission; })), costs: C.sum(pr.map(function (p) { return p.costs; })) };
   };
   var m = stats(month);
+  // Intermediaciones completadas del mes: suman a la ganancia y al número de operaciones
+  var brProfit = function (list) { return C.sum(list.map(function (x) { var v = C.toBase(C.brokerQuote(x).profit, x.asset, rates()); return isNaN(v) ? 0 : v; })); };
+  var brDone = function (x) { return C.brokerStatus(x).status === 'completada'; };
+  var brMonth = (state.brokerages || []).filter(function (x) { return x.date.slice(0, 7) === ym && brDone(x); });
+  m.n += brMonth.length; m.profit = C.round(m.profit + brProfit(brMonth), 2);
+  m.volume = C.round(m.volume + C.sum(brMonth.map(function (x) { var v = C.toBase(x.amount, x.asset, rates()); return isNaN(v) ? 0 : v; })), 2);
   $('#fx-month-name').textContent = new Date(ym + '-15T12:00').toLocaleDateString(LOCALE, { month: 'long' });
   $('#fx-profit').innerHTML = '<span class="' + trend(m.profit) + '">' + fmtSigned(m.profit, b) + '</span>';
   $('#fx-stats').innerHTML = stat('Operaciones', String(m.n)) + stat('Volumen', fmtMoney(m.volume, b)) +
@@ -299,10 +306,19 @@ function renderExchanges() {
     .sort(function (a, c) { return a.date < c.date ? 1 : a.date > c.date ? -1 : (c.createdAt || 0) - (a.createdAt || 0); });
   var fs = stats(list.filter(function (x) { return x.status === 'completada'; }));
   var pend = list.filter(function (x) { return x.status !== 'completada'; }).length;
+  var brs = (state.brokerages || []).filter(function (x) { return !fm || x.date.slice(0, 7) === fm; });
+  fs.profit = C.round(fs.profit + brProfit(brs.filter(brDone)), 2);
+  pend += brs.filter(function (x) { return !brDone(x); }).length;
   $('#fx-totals').innerHTML = '<span>Ganancia <b class="' + trend(fs.profit) + '">' + fmtSigned(fs.profit, b) + '</b></span><span>Comisiones <b>' + fmtMoney(fs.com, b) + '</b></span>' +
-    '<span>Costos <b>' + fmtMoney(fs.costs, b) + '</b></span><span>' + list.length + ' cambio(s)' + (pend ? ' · ' + pend + ' pendiente(s)' : '') + '</span>';
+    '<span>Costos <b>' + fmtMoney(fs.costs, b) + '</b></span><span>' + (list.length + brs.length) + ' operación(es)' + (pend ? ' · ' + pend + ' pendiente(s)' : '') + '</span>';
   var editing = $('#fx-form').editId.value;
-  $('#fx-list').innerHTML = list.length ? list.map(function (x) {
+  var rows = list.map(function (x) { return { x: x }; }).concat(brs.map(function (x) { return { br: x }; })).sort(function (a, c) {
+    var p = a.x || a.br, q = c.x || c.br;
+    return p.date < q.date ? 1 : p.date > q.date ? -1 : (q.createdAt || 0) - (p.createdAt || 0);
+  });
+  $('#fx-list').innerHTML = rows.length ? rows.map(function (row) {
+    if (row.br) return brokerRowHtml(row.br);
+    var x = row.x;
     var pr = C.exchangeProfit(x, rates());
     return '<li class="clickable' + (editing === x.id ? ' editing' : '') + '" data-open-fx="' + x.id + '" tabindex="0" role="button">' +
       '<span class="avatar tr">' + icon('i-swap') + '</span>' +
@@ -312,6 +328,7 @@ function renderExchanges() {
       '<div class="amt"><span class="' + (x.status === 'completada' ? trend(pr.profit) : 'muted') + '">' + fmtSigned(pr.profit, b) + '</span>' +
       '<div class="sub">' + (x.status === 'completada' ? 'ganancia' : 'prevista') + '</div></div></li>';
   }).join('') : '<li class="empty">Sin cambios en este periodo.</li>';
+  $('[data-action="delete-br"]').classList.toggle('hidden', !$('#br-form').editId.value);
 }
 
 /** Mantiene al día las listas de monedas y cuentas (p. ej. al añadir USDT o una cuenta nueva). */

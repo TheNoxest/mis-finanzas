@@ -16,6 +16,7 @@ resetInvForm();
 resetAccForm();
 resetDebtForm();
 resetFxForm();
+resetBrForm();
 $('#fx-month').value = thisMonth();
 $('#sale-month').value = thisMonth();
 resetSaleForm();

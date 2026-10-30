@@ -85,6 +85,23 @@
     return m;
   }
 
+  /**
+   * Intermediación, vista por uno de los dos clientes: side 'seller' (me vendió) o 'buyer' (me compró).
+   * Muestra lo que entrega, la tasa acordada y lo que recibe; el estado según sus movimientos pendientes.
+   */
+  function brokerModel(b, ctx, side) {
+    var L = ctx && ctx.locale, sell = side === 'seller', q = C.brokerQuote(b), pc = b.payCurrency, ac = b.asset;
+    var m = base(ctx, { kind: 'cambio', title: 'Comprobante de cambio de divisas', number: number('CAM', b.date, b.id), date: b.date,
+      partyLabel: 'Cliente', party: (sell ? b.seller : b.buyer) || '' });
+    m.rows.push(row(sell ? 'El cliente entrega' : 'El cliente paga', sell ? money(b.amount, ac, L) : money(q.revenue, pc, L)));
+    m.rows.push(row('Tasa', '1 ' + ac + ' = ' + numTxt(sell ? b.buyRate : b.sellRate, L, 4) + ' ' + pc));
+    m.rows.push(row('El cliente recibe', sell ? money(q.cost, pc, L) : money(b.amount, ac, L), true));
+    var mine = C.brokerLegs(b).filter(function (l) { return C.personKey(l.person) === C.personKey(sell ? b.seller : b.buyer) && l.pending > 0; });
+    m.status = mine.length ? mine.map(function (l) { return (l.dir === 'in' ? 'Pendiente de pago: ' : 'Pendiente de entrega: ') + money(l.pending, l.currency, L); }).join(' · ') : 'Completado';
+    m.note = b.note || '';
+    return m;
+  }
+
   /** Venta (de contado o a crédito). */
   function saleModel(sv, ctx) {
     var L = ctx && ctx.locale, cur = sv.currency;
@@ -180,6 +197,20 @@
       rows.push(row('Deuda total', money(parent.amount, cur, L)));
       rows.push(row('Monto ' + (cob ? 'abonado' : 'pagado'), money(pm.amount, cur, L), true));
       rows.push(row('Saldo pendiente', money(after, cur, L)));
+    } else if (kind === 'broker') {
+      var lg = C.brokerLegs(parent).filter(function (l) { return (l.payments || []).some(function (p) { return p.id === pm.id; }); })[0];
+      if (!lg) return null;
+      cur = lg.currency; party = lg.person || '';
+      var inn = lg.dir === 'in';
+      title = inn ? 'Recibo de pago del cambio' : 'Comprobante de entrega del cambio';
+      partyLabel = inn ? 'Pagó' : 'Entregado a';
+      var upto = ordered(lg.payments), k = upto.indexOf(upto.filter(function (x) { return x.id === pm.id; })[0]);
+      var paidUpTo = C.sum(upto.slice(0, k + 1).map(function (x) { return x.amount; }));
+      rows.push(row('Cambio del', dateTxt(parent.date) + ' · ' + money(parent.amount, parent.asset, L)));
+      rows.push(row('Total', money(lg.total, cur, L)));
+      rows.push(row(inn ? 'Monto pagado' : 'Monto entregado', money(pm.amount, cur, L), true));
+      after = C.round(Math.max(0, lg.total - paidUpTo), 2);
+      rows.push(row('Saldo pendiente', money(after, cur, L)));
     } else { // fx
       var st = C.exchangeSettlement(parent); cur = st ? st.currency : parent.inCurrency; party = parent.client || '';
       var paidIn = st && st.side === 'in';
@@ -233,7 +264,7 @@
       return { concept: 'Préstamo, cuota ' + it.next.n + ' de ' + it.installments, amount: money(it.next.amount, it.currency, locale), due: it.next.date };
     }
     var concept = it.source === 'venta' ? 'Venta' + (it.concept && it.concept !== 'Venta' ? ' (' + it.concept + ')' : '') + ' del ' + dateTxt(it.date)
-      : it.source === 'cambio' ? 'Cambio de divisas del ' + dateTxt(it.date)
+      : it.source === 'cambio' || it.source === 'intermediacion' ? 'Cambio de divisas del ' + dateTxt(it.date)
       : (it.concept || 'Deuda') + ' del ' + dateTxt(it.date);
     return { concept: concept, amount: money(it.pending, it.currency, locale), due: it.dueDate || null };
   }
@@ -391,7 +422,7 @@
 
   root.Receipt = {
     money: money, number: number,
-    exchangeModel: exchangeModel, saleModel: saleModel, loanModel: loanModel, debtModel: debtModel, paymentModel: paymentModel,
+    exchangeModel: exchangeModel, brokerModel: brokerModel, saleModel: saleModel, loanModel: loanModel, debtModel: debtModel, paymentModel: paymentModel,
     text: text, reminderText: reminderText, reminderItem: reminderItem, normalizePhone: normalizePhone, waUrl: waUrl,
     draw: draw, pdfFromJpeg: pdfFromJpeg, pdfBlob: pdfBlob, canvasBlob: canvasBlob
   };

@@ -16,13 +16,22 @@ function receiptCtx() {
     loanTerms: function (l) { var p = privacy; privacy = false; try { return loanTermsText(l); } finally { privacy = p; } } };
 }
 function recOf(kind, id) {
-  var list = kind === 'fx' ? state.exchanges : kind === 'sale' ? state.sales : kind === 'loan' ? state.loans : state.debts;
+  var list = kind === 'fx' ? state.exchanges : kind === 'sale' ? state.sales : kind === 'loan' ? state.loans : kind === 'broker' ? state.brokerages : state.debts;
   return byId(list || [], id);
 }
 /** Modelo del comprobante de una operación (o del recibo de uno de sus pagos si se da payId). */
 function receiptModel(kind, id, payId) {
   var rec = recOf(kind, id), ctx = receiptCtx();
   if (!rec) return null;
+  if (kind === 'broker') {
+    // Recibo de un cobro/pago, o comprobante de la operación para uno de los dos clientes
+    if (payId) {
+      var bpm = null;
+      Object.keys(rec.legs || {}).forEach(function (r) { bpm = bpm || byId(rec.legs[r].payments || [], payId); });
+      return bpm ? Receipt.paymentModel('broker', rec, bpm, ctx) : null;
+    }
+    return Receipt.brokerModel(rec, ctx, brokerSide(rec));
+  }
   if (payId) {
     var pm = byId((kind === 'fx' ? rec.settlements : rec.payments) || [], payId);
     return pm ? Receipt.paymentModel(kind, rec, pm, ctx) : null;
@@ -30,7 +39,16 @@ function receiptModel(kind, id, payId) {
   return kind === 'fx' ? Receipt.exchangeModel(rec, ctx) : kind === 'sale' ? Receipt.saleModel(rec, ctx)
     : kind === 'loan' ? Receipt.loanModel(rec, ctx) : Receipt.debtModel(rec, ctx);
 }
-function personOf(kind, id) { var r = recOf(kind, id); return r ? (r.client || r.person || '') : ''; }
+/** Cliente de una intermediación al que va el comprobante: el del movimiento abierto en la tarjeta (si no, quien compra). */
+function brokerSide(bk) {
+  var lg = payRef && payRef.kind === 'broker' && payRef.id === bk.id ? C.brokerLegs(bk).filter(function (l) { return l.role === payRef.leg; })[0] : null;
+  return lg && C.personKey(lg.person) === C.personKey(bk.seller) && C.personKey(bk.seller) !== C.personKey(bk.buyer) ? 'seller' : 'buyer';
+}
+function personOf(kind, id) {
+  var r = recOf(kind, id); if (!r) return '';
+  if (kind === 'broker') return brokerSide(r) === 'seller' ? r.seller || '' : r.buyer || '';
+  return r.client || r.person || '';
+}
 function contactOf(name) {
   var k = C.personKey(name); if (!k) return null;
   return (state.contacts || []).filter(function (c) { return C.personKey(c.name) === k; })[0] || null;
@@ -142,7 +160,7 @@ function receiptClick(d) {
   switch (d.action) {
     case 'rcpt-open': openReceipt(d.kind, d.id); return true;
     case 'rcpt-form':
-      var fid = { fx: '#fx-form', sale: '#sale-form', loan: '#loan-form', debt: '#debt-form' }[d.kind], eid = fid && $(fid).editId.value;
+      var fid = { fx: '#fx-form', sale: '#sale-form', loan: '#loan-form', debt: '#debt-form', broker: '#br-form' }[d.kind], eid = fid && $(fid).editId.value;
       if (eid) openReceipt(d.kind, eid);
       return true;
     case 'wa-remind': remindWa(personOf(d.kind, d.id), d.id); return true;

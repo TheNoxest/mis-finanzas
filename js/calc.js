@@ -302,6 +302,12 @@
       else if (x.status !== 'pendiente_entrega') each(fxSplits(x, 'out'), -1, x);
       (x.costs || []).forEach(function (c) { if (c.accountId) add(c.accountId, -Number(c.amount), x); });
     });
+    // Intermediaciones: cada cobro entra y cada pago sale de su cuenta
+    (state.brokerages || []).forEach(function (bk) {
+      brokerLegs(bk).forEach(function (lg) {
+        lg.payments.forEach(function (pm) { paySplits(pm).forEach(function (s) { add(s.accountId, (lg.dir === 'in' ? 1 : -1) * Number(s.amount), pm); }); });
+      });
+    });
     // Deudas: un préstamo mueve dinero al crearse; cada abono entra (por cobrar) o sale (por pagar)
     // Ventas: de contado entra todo en su cuenta; por cobrar entra con cada cobro
     (state.sales || []).forEach(function (sv) {
@@ -678,6 +684,20 @@
           extra: { side: st.side, sideAccount: st.side === 'in' ? x.inAccountId : x.outAccountId, mixed: !!(z.splits && z.splits.length > 1) } });
       });
     });
+    (state.brokerages || []).forEach(function (bk) {
+      var st = brokerStatus(bk);
+      push({ key: 'br:' + bk.id, date: bk.date, createdAt: bk.createdAt, group: 'cambio', kind: 'intermediacion', person: (bk.seller || '') + ' → ' + (bk.buyer || ''),
+        concept: '', note: bk.note || '', currency: bk.asset, amount: Number(bk.amount) || 0, parts: [], status: st.status === 'completada' ? '' : 'pendiente',
+        ref: { kind: 'broker', id: bk.id }, extra: { profit: st.quote.profit, buyRate: bk.buyRate, sellRate: bk.sellRate, payCurrency: bk.payCurrency } });
+      st.legs.forEach(function (lg) {
+        lg.payments.forEach(function (pm) {
+          push({ key: 'brp:' + bk.id + ':' + lg.role + ':' + pm.id, date: pm.date, createdAt: pm.createdAt, group: 'cambio',
+            kind: lg.dir === 'in' ? 'cobro_intermediacion' : 'pago_intermediacion', person: lg.person, concept: '', note: pm.note || '',
+            currency: lg.currency, amount: pm.amount, parts: signed(paySplits(pm), lg.dir === 'in' ? 1 : -1), status: '',
+            ref: { kind: 'broker', id: bk.id, pay: lg.role + ':' + pm.id }, extra: { role: lg.role } });
+        });
+      });
+    });
     (state.sales || []).forEach(function (sv) {
       var b = saleBalance(sv), cash = sv.mode === 'contado';
       push({ key: 'sale:' + sv.id, date: sv.date, createdAt: sv.createdAt, group: 'venta', kind: 'venta', person: sv.client || '', concept: sv.concept || '',
@@ -718,7 +738,7 @@
   }
 
   /** Filas que deberían mover dinero en una cuenta (si no tienen ninguna, se avisa). */
-  var NEEDS_ACCOUNT = { ingreso: 1, egreso: 1, cobro_cambio: 1, entrega_cambio: 1, cobro_venta: 1, pago_prestamo: 1, cobro_prestamo: 1, abono_recibido: 1, abono_pagado: 1 };
+  var NEEDS_ACCOUNT = { ingreso: 1, egreso: 1, cobro_cambio: 1, entrega_cambio: 1, cobro_intermediacion: 1, pago_intermediacion: 1, cobro_venta: 1, pago_prestamo: 1, cobro_prestamo: 1, abono_recibido: 1, abono_pagado: 1 };
   /**
    * Posibles errores por fila → { key: ['duplicado', 'sin_cuenta', …] }.
    *  duplicado: mismo tipo, fecha, moneda, monto, persona, categoría y cuentas que otra fila
@@ -910,6 +930,10 @@
       p.exchanges++; p.fxVolume += isNaN(pr.received) ? 0 : pr.received;
       if (x.status === 'completada') p.fxProfit += isNaN(pr.profit) ? 0 : pr.profit;
     });
+    (state.brokerages || []).forEach(function (bk) {
+      var vol = toB(bk.amount, bk.asset);
+      [bk.seller, bk.buyer].forEach(function (n) { var p = get(n, bk.date); if (p) { p.exchanges++; p.fxVolume += vol; } });
+    });
     (state.sales || []).forEach(function (sv) { var p = get(sv.client, sv.date); if (!p) return; p.sales++; p.salesTotal += toB(sv.amount, sv.currency); });
     (state.loans || []).forEach(function (l) { var p = get(l.person, l.date); if (p) p.loans++; });
     (state.debts || []).forEach(function (d) { var p = get(d.person, d.date); if (p) p.debts++; });
@@ -942,6 +966,13 @@
       out.push({ date: x.date, kind: 'cambio', id: x.id, rec: x, amount: Number(x.received), currency: x.inCurrency,
         status: st && st.status !== 'pagada' ? (st.paid > 0 ? 'parcial' : 'pendiente') : 'completada', pending: st ? st.pending : 0, pendingCurrency: st ? st.currency : null });
     });
+    (state.brokerages || []).forEach(function (bk) {
+      if (!mine(bk.seller) && !mine(bk.buyer)) return;
+      var st = brokerStatus(bk), open = st.legs.filter(function (l) { return mine(l.person) && l.pending > 0; })[0];
+      out.push({ date: bk.date, kind: 'intermediacion', id: bk.id, rec: bk, amount: Number(bk.amount), currency: bk.asset,
+        role: mine(bk.seller) ? 'vende' : 'compra', status: st.status === 'completada' ? 'completada' : open ? (open.paid > 0 ? 'parcial' : 'pendiente') : 'en_curso',
+        pending: open ? open.pending : 0, pendingCurrency: open ? open.currency : null, leg: open ? open.role : null, legDir: open ? open.dir : null });
+    });
     (state.sales || []).forEach(function (sv) {
       if (!mine(sv.client)) return;
       var b = saleBalance(sv);
@@ -970,6 +1001,57 @@
       else if (p.key.indexOf(q) !== -1) contains.push(p);
     });
     return starts.concat(contains).slice(0, limit || 6);
+  }
+
+  // =================================================================== Intermediación (arbitraje entre dos clientes)
+  /**
+   * Compro `amount` de `asset` (USD, USDT…) a un cliente (seller) a `buyRate` y se lo vendo a otro (buyer) a `sellRate`,
+   * ambas en `payCurrency` (p. ej. Bs) por 1 unidad del activo.
+   *  costo = monto × tasa de compra · ingreso = monto × tasa de venta · diferencia = ingreso − costo (en payCurrency)
+   *  ganancia = diferencia ÷ tasa para la ganancia (en la moneda del activo). La tasa sugerida es la más alta de las dos.
+   */
+  function brokerQuote(b) {
+    var amt = Number(b.amount) || 0, buy = Number(b.buyRate) || 0, sell = Number(b.sellRate) || 0;
+    var suggested = Math.max(buy, sell), pr = Number(b.profitRate) > 0 ? Number(b.profitRate) : suggested;
+    var cost = round(amt * buy, 2), revenue = round(amt * sell, 2), diff = round(revenue - cost, 2);
+    return { cost: cost, revenue: revenue, diff: diff, profitRate: pr, suggestedRate: suggested, profit: pr > 0 ? round(diff / pr, 2) : 0 };
+  }
+  var BROKER_ROLES = ['asset_in', 'asset_out', 'pay_in', 'pay_out'];
+  /**
+   * Movimientos de dinero de una intermediación, cada uno con lo pagado y lo pendiente (payments en b.legs[rol]).
+   *  'directo' (los clientes se pagan entre ellos): un solo movimiento 'diff' = la diferencia que me paga el comprador
+   *     (o que pago yo al vendedor si es pérdida), en Bs o en la moneda del activo según b.diffCurrency.
+   *  'por_mi' (todo pasa por mí): asset_in (recibo el activo del vendedor) · asset_out (se lo entrego al comprador) ·
+   *     pay_in (cobro al comprador en Bs) · pay_out (pago al vendedor en Bs).
+   * rate = Bs por 1 unidad del activo de ese movimiento (para valorar lo pendiente en Bs sin usar la tasa oficial).
+   */
+  function brokerLegs(b) {
+    var q = brokerQuote(b), L = b.legs || {}, amt = round(Number(b.amount) || 0, 2);
+    var mk = function (role, dir, person, currency, amount, rate) {
+      var payments = (L[role] && L[role].payments) || [], paid = sum(payments.map(function (p) { return p.amount; }));
+      var total = round(amount, 2), pending = round(total - paid, 2);
+      return { role: role, dir: dir, person: person || '', currency: currency, total: total, paid: paid, pending: pending > 0 ? pending : 0,
+        rate: rate, payments: payments, accountId: (L[role] && L[role].accountId) || null,
+        status: pending <= 0 ? 'pagada' : paid > 0 ? 'parcial' : 'pendiente' };
+    };
+    if (b.mode === 'directo') {
+      if (!q.diff) return [];
+      var cur = b.diffCurrency || b.payCurrency, inPay = cur === b.payCurrency, gain = q.diff > 0;
+      return [mk('diff', gain ? 'in' : 'out', gain ? b.buyer : b.seller, cur, inPay ? Math.abs(q.diff) : Math.abs(q.profit), inPay ? q.profitRate : null)];
+    }
+    return [mk('asset_in', 'in', b.seller, b.asset, amt, null), mk('asset_out', 'out', b.buyer, b.asset, amt, null),
+      mk('pay_in', 'in', b.buyer, b.payCurrency, q.revenue, Number(b.sellRate)), mk('pay_out', 'out', b.seller, b.payCurrency, q.cost, Number(b.buyRate))];
+  }
+  /** Estado de una intermediación: completada cuando todos sus movimientos están saldados. */
+  function brokerStatus(b) {
+    var legs = brokerLegs(b), q = brokerQuote(b);
+    var done = legs.every(function (l) { return l.status === 'pagada'; });
+    return { quote: q, legs: legs, status: done ? 'completada' : legs.some(function (l) { return l.paid > 0; }) ? 'parcial' : 'pendiente' };
+  }
+  /** Valor en la moneda base de un monto de un movimiento: lo que está en Bs se pasa con la tasa de la operación. */
+  function brokerLegBase(b, leg, amount, rates) {
+    if (leg.rate > 0 && leg.currency === b.payCurrency && leg.currency !== b.asset) return toBase(amount / leg.rate, b.asset, rates);
+    return toBase(amount, leg.currency, rates);
   }
 
   // =================================================================== Ventas
@@ -1109,6 +1191,18 @@
         currency: st.currency, date: x.date, dueDate: null, total: st.total, paid: st.paid, pending: st.pending, status: st.status,
         pendingBase: toBase(st.pending, st.currency, rates) });
     });
+    // Intermediaciones: cada movimiento que quedó pendiente (o se pagó por partes) es un cobro o un pago con su cliente
+    (state.brokerages || []).forEach(function (bk) {
+      brokerLegs(bk).forEach(function (lg) {
+        var later = lg.payments.length > 1 || lg.payments.some(function (p) { return p.date !== bk.date; });
+        if (!(lg.pending > 0) && !later) return;
+        var curName = lg.currency === bk.payCurrency ? bk.payCurrency : lg.currency;
+        (lg.dir === 'in' ? rec : pay).push({ source: 'intermediacion', id: bk.id, leg: lg.role, person: lg.person,
+          concept: 'Intermediación · ' + (lg.dir === 'in' ? 'cobrar ' : lg.role === 'asset_out' ? 'entregar ' : 'pagar ') + curName,
+          currency: lg.currency, date: bk.date, dueDate: null, total: lg.total, paid: lg.paid, pending: lg.pending, status: lg.status,
+          pendingBase: brokerLegBase(bk, lg, lg.pending, rates) });
+      });
+    });
     [rec, pay].forEach(function (list) {
       list.forEach(function (it) {
         it.overdue = it.status !== 'pagada' && !!it.dueDate && !!today && it.dueDate < today;
@@ -1135,6 +1229,14 @@
       var fee = transferFee(t);
       if (fee) extra.push({ id: 'tf_' + t.id, synthetic: true, type: fee > 0 ? 'egreso' : 'ingreso', amount: Math.abs(fee),
         currency: t.toCurrency, categoryId: '__comisiones', accountId: t.fromAccountId, date: t.date, note: t.note || '' });
+    });
+    // Intermediación completada: la ganancia (o pérdida) cuenta como «Cambios de divisa»
+    (state.brokerages || []).forEach(function (bk) {
+      var st = brokerStatus(bk), p = st.quote.profit;
+      if (st.status !== 'completada' || !p) return;
+      var dl = st.legs.filter(function (l) { return l.role === 'diff'; })[0];
+      extra.push({ id: 'br_' + bk.id, synthetic: true, type: p > 0 ? 'ingreso' : 'egreso', amount: Math.abs(p), currency: bk.asset,
+        categoryId: '__cambios', accountId: dl ? dl.accountId : null, date: bk.date, note: (bk.seller || '') + ' → ' + (bk.buyer || '') });
     });
     (state.sales || []).forEach(function (sv) {
       if (Number(sv.amount) > 0) extra.push({ id: 'sv_' + sv.id, synthetic: true, type: 'ingreso', amount: Number(sv.amount), currency: sv.currency,
@@ -1349,6 +1451,13 @@
         debts: (state.debts || []).filter(function (x) { return x.date <= d; }).map(function (x) {
           return Object.assign({}, x, { payments: (x.payments || []).filter(function (pm) { return pm.date <= d; }) });
         }),
+        brokerages: (state.brokerages || []).filter(function (x) { return x.date <= d; }).map(function (x) {
+          var legs = {};
+          Object.keys(x.legs || {}).forEach(function (k) {
+            legs[k] = Object.assign({}, x.legs[k], { payments: ((x.legs[k] || {}).payments || []).filter(function (pm) { return pm.date <= d; }) });
+          });
+          return Object.assign({}, x, { legs: legs });
+        }),
         sales: (state.sales || []).filter(function (x) { return x.date <= d; }).map(function (x) {
           return Object.assign({}, x, { payments: (x.payments || []).filter(function (pm) { return pm.date <= d; }) });
         }),
@@ -1393,6 +1502,7 @@
     rankByUse: rankByUse, swipeIntent: swipeIntent, pullIntent: pullIntent,
     exchangeQuote: exchangeQuote, exchangeProfit: exchangeProfit, debtBalance: debtBalance, thirdParty: thirdParty, exchangeSettlement: exchangeSettlement,
     personKey: personKey, peopleIndex: peopleIndex, personHistory: personHistory, matchPeople: matchPeople,
+    brokerQuote: brokerQuote, brokerLegs: brokerLegs, brokerStatus: brokerStatus, brokerLegBase: brokerLegBase, BROKER_ROLES: BROKER_ROLES,
     saleBalance: saleBalance, PERIODS: PERIODS, addPeriod: addPeriod, loanSchedule: loanSchedule, loanPaymentSplit: loanPaymentSplit, loanStatus: loanStatus,
     flowTransactions: flowTransactions,
     samePeg: samePeg,

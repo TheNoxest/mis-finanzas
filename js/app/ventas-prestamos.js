@@ -13,12 +13,12 @@ var STATUS_TAG = { pagada: '<span class="tag ok">Pagada</span>', parcial: '<span
 /** Abre la tarjeta de cobros (venta) o pagos (préstamo). stay: quedarse en Por cobrar / Por pagar. */
 function openRef(kind, id, opts) {
   opts = opts || {};
-  var rec = kind === 'sale' ? byId(state.sales, id) : byId(state.loans, id);
+  var rec = kind === 'sale' ? byId(state.sales, id) : kind === 'broker' ? byId(state.brokerages || [], id) : byId(state.loans, id);
   if (!rec) return;
-  var home = kind === 'sale' ? 'ventas' : 'prestamos';
+  var home = kind === 'sale' ? 'ventas' : kind === 'broker' ? 'cambios' : 'prestamos';
   if (!opts.stay && accTab !== home) showView('cuentas/' + home);
   if (accTab === 'cobrar' || accTab === 'pagar') resetDebtForm();
-  payFx = null; payRef = { kind: kind, id: id };
+  payFx = null; payRef = { kind: kind, id: id, leg: opts.leg || null };
   placePayCard(accTab === 'cobrar' || accTab === 'pagar' ? 'acc-panel-deudas' : 'acc-panel-' + accTab);
   $('#pay-form').dataset.debt = '';
   renderThirdParty();
@@ -42,6 +42,7 @@ function planTable(rows, cur, withStatus) {
     }).join('') + '</tbody></table>';
 }
 function renderRefPayments() {
+  if (payRef.kind === 'broker') { renderBrokerPayments(); return; }
   var card = $('#debt-payments'), pf = $('#pay-form'), today = S.today();
   var sale = payRef.kind === 'sale', rec = sale ? byId(state.sales, payRef.id) : byId(state.loans, payRef.id);
   var panelOk = accTab === 'cobrar' || accTab === 'pagar' || accTab === (sale ? 'ventas' : 'prestamos');
@@ -88,6 +89,7 @@ function renderRefPayments() {
   }
 }
 function refPay(f) {
+  if (payRef.kind === 'broker') { brokerPay(f); return; }
   var sale = payRef.kind === 'sale', rec = sale ? byId(state.sales, payRef.id) : byId(state.loans, payRef.id);
   if (!rec) return;
   var st = sale ? C.saleBalance(rec) : C.loanStatus(rec, S.today());
@@ -110,6 +112,7 @@ function refPay(f) {
   persist();
 }
 function deleteRefPay(pid) {
+  if (payRef && payRef.kind === 'broker') { brokerDeletePay(pid); return; }
   var rec = payRef && (payRef.kind === 'sale' ? byId(state.sales, payRef.id) : byId(state.loans, payRef.id));
   if (!rec || !confirm('¿Eliminar este registro?')) return;
   var pm = byId(rec.payments || [], pid); if (pm) invalidateSnapshots(pm.date);

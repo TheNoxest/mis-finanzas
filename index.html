@@ -345,6 +345,11 @@
           <div class="stat-row" id="fx-stats"></div>
         </div>
 
+        <div class="seg fx-kind" role="radiogroup" aria-label="Tipo de operación">
+          <input type="radio" name="fx-kind" id="fk-normal" value="normal" checked><label for="fk-normal">Cambio normal</label>
+          <input type="radio" name="fx-kind" id="fk-broker" value="broker"><label for="fk-broker">Intermediación</label>
+        </div>
+
         <form id="fx-form" class="card form" autocomplete="off" novalidate>
           <div class="card-head form-head"><h2 id="fx-form-title">Nuevo cambio</h2><button type="button" class="pay-edit hidden" data-action="rcpt-form" data-kind="fx"><svg class="ic"><use href="#i-doc"/></svg><span>Comprobante</span></button></div>
           <p class="warning hidden" id="fx-settle-hint"></p>
@@ -411,6 +416,46 @@
           </div>
           <input type="hidden" name="editId">
         </form>
+
+        <form id="br-form" class="card form hidden" autocomplete="off" novalidate>
+          <div class="card-head form-head"><h2 id="br-form-title">Nueva intermediación</h2><button type="button" class="pay-edit hidden" data-action="rcpt-form" data-kind="broker"><svg class="ic"><use href="#i-doc"/></svg><span>Comprobante</span></button></div>
+          <p class="hint">Le compras a un cliente y le vendes a otro: tu ganancia es la diferencia entre las dos tasas, en dólares.</p>
+          <div class="grid">
+            <label>Fecha<input name="date" type="date" required></label>
+            <label>Monto<input inputmode="decimal" autocomplete="off" name="amount" type="text" placeholder="0.00"></label>
+            <label>Qué se negocia<select name="asset"></select></label>
+            <label>Se paga en<select name="payCurrency"></select></label>
+          </div>
+          <h3>Te vende</h3>
+          <div class="grid">
+            <label>Cliente<input name="seller" data-people autocomplete="off" maxlength="60" placeholder="Quién te vende"></label>
+            <label><span class="br-rate-label" data-side="buy">Tasa de compra</span><input inputmode="decimal" autocomplete="off" name="buyRate" type="text" placeholder="0"></label>
+          </div>
+          <h3>Te compra</h3>
+          <div class="grid">
+            <label>Cliente<input name="buyer" data-people autocomplete="off" maxlength="60" placeholder="Quién te compra"></label>
+            <label><span class="br-rate-label" data-side="sell">Tasa de venta</span><input inputmode="decimal" autocomplete="off" name="sellRate" type="text" placeholder="0"></label>
+          </div>
+          <div class="quote" id="br-quote"></div>
+          <label>Tasa para la ganancia <span class="muted" id="br-pr-hint"></span><input inputmode="decimal" autocomplete="off" name="profitRate" type="text"></label>
+          <div class="profit-box" id="br-profit-box"></div>
+          <h3>¿Cómo se mueve el dinero?</h3>
+          <div class="seg" role="radiogroup" aria-label="Cómo se mueve el dinero">
+            <input type="radio" name="mode" id="bm-directo" value="directo" checked><label for="bm-directo">Directo entre clientes</label>
+            <input type="radio" name="mode" id="bm-por_mi" value="por_mi"><label for="bm-por_mi">Todo pasa por mí</label>
+          </div>
+          <p class="hint" id="br-mode-hint"></p>
+          <div id="br-legs"></div>
+          <label>Nota<input name="note" maxlength="140" placeholder="Opcional"></label>
+          <div class="actions">
+            <button type="button" class="danger hidden" data-action="delete-br">Eliminar</button>
+            <button type="button" class="ghost hidden" data-action="cancel-br">Cancelar</button>
+            <button type="submit" class="primary">Guardar intermediación</button>
+          </div>
+          <input type="hidden" name="editId">
+        </form>
+
+        <div data-pay-anchor></div>
 
         <div class="card">
           <div class="card-head wrap"><h2>Historial de cambios <small class="muted small">· toca uno para editarlo</small></h2>
@@ -1184,6 +1229,7 @@
   <script src="js/app/pagos-mixtos.js"></script>
   <script src="js/app/comprobantes.js"></script>
   <script src="js/app/cambios.js"></script>
+  <script src="js/app/intermediacion.js"></script>
   <script src="js/app/ficha-cuenta.js"></script>
   <script src="js/app/sincronizacion.js"></script>
   <script src="js/app/registro-rapido.js"></script>

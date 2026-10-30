@@ -47,7 +47,9 @@
       }
     });
     var fxList = (state.exchanges || []).filter(function (x) { return x.status === 'completada' && x.date >= r.from && x.date <= r.to; });
-    var fxProfit = C.sum(fxList.map(function (x) { return baseOf(C.exchangeProfit(x, rates).profit); }));
+    var brList = (state.brokerages || []).filter(function (x) { return x.date >= r.from && x.date <= r.to && C.brokerStatus(x).status === 'completada'; });
+    var fxProfit = C.round(C.sum(fxList.map(function (x) { return baseOf(C.exchangeProfit(x, rates).profit); })) +
+      C.sum(brList.map(function (x) { return baseOf(C.toBase(C.brokerQuote(x).profit, x.asset, rates)); })), 2);
     var nw = C.netWorthSeries(state, [monthEnd(pm), r.to], { today: today });
     var nwStart = nw[0].total, nwEnd = nw[1].total;
     return {
@@ -58,10 +60,10 @@
       deltaPts: cur.income > 0 && prev.income > 0 ? C.round(cur.savingsRate - prev.savingsRate, 1) : null,
       prevExpense: prev.expense,
       top: top, rising: rising,
-      fx: { count: fxList.length, profit: fxProfit },
+      fx: { count: fxList.length + brList.length, profit: fxProfit },
       netWorth: { start: nwStart, end: nwEnd, change: C.round(nwEnd - nwStart, 2),
         pct: nwStart ? C.round((nwEnd - nwStart) / Math.abs(nwStart) * 100, 1) : null },
-      hasData: cur.count > 0 || fxList.length > 0
+      hasData: cur.count > 0 || fxList.length > 0 || brList.length > 0
     };
   }
 
@@ -97,6 +99,12 @@
     var inc = C.totalsByCategory(flows, rates, 'ingreso', range), exp = C.totalsByCategory(flows, rates, 'egreso', range);
     var fxList = (state.exchanges || []).filter(function (x) { return x.status === 'completada' && x.date.slice(0, 4) === Y; });
     var fxP = fxList.map(function (x) { return C.exchangeProfit(x, rates); });
+    // Intermediaciones completadas: volumen = monto negociado; ganancia = la diferencia convertida
+    (state.brokerages || []).forEach(function (x) {
+      if (x.date.slice(0, 4) !== Y || C.brokerStatus(x).status !== 'completada') return;
+      fxList = fxList.concat([x]);
+      fxP.push({ received: C.toBase(x.amount, x.asset, rates), commission: 0, costs: 0, profit: C.toBase(C.brokerQuote(x).profit, x.asset, rates) });
+    });
     var sales = [];
     C.buildPositions(state.investments, rates).positions.forEach(function (p) {
       (p.sales || []).forEach(function (sl) {

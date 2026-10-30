@@ -329,6 +329,45 @@
     eq('El saldo del banco no cambia por la custodia (se pagó desde ahí)', C.accountHoldings(moved, 'A').cash, 6212);
     eq('Suma de cuentas + activos = patrimonio sin terceros', C.round(['A', 'B', 'C', 'D'].reduce(function (s, id) { return s + C.accountHoldings(state, id).total; }, 0)), nw.total);
 
+    section('Intermediación (compro a un cliente y vendo a otro)');
+    var bq = C.brokerQuote({ amount: 100, buyRate: 1090, sellRate: 2000 });
+    eq('100 USD: pago 100 × 1.090 = 109.000 Bs, cobro 100 × 2.000 = 200.000 Bs, diferencia 91.000 Bs', [bq.cost, bq.revenue, bq.diff], [109000, 200000, 91000]);
+    eq('Tasa sugerida = la más alta (2.000) → ganancia 91.000 ÷ 2.000 = +45,50 USD', [bq.suggestedRate, bq.profit], [2000, 45.5]);
+    eq('Con la tasa 1.090 elegida a mano: 91.000 ÷ 1.090 = 83,49 USD', C.brokerQuote({ amount: 100, buyRate: 1090, sellRate: 2000, profitRate: 1090 }).profit, 83.49);
+    eq('Pérdida: compro a 2.000 y vendo a 1.090 → −91.000 Bs = −45,50 USD', C.brokerQuote({ amount: 100, buyRate: 2000, sellRate: 1090 }).profit, -45.5);
+    var bkBase = { id: 'bk1', date: '2026-10-20', asset: 'USD', amount: 100, payCurrency: 'VES', seller: 'Ximena', buyRate: 1090, buyer: 'Yorman', sellRate: 2000 };
+    var dirBs = Object.assign({}, bkBase, { mode: 'directo', diffCurrency: 'VES', legs: { diff: { accountId: 'BS', payments: [{ id: 'p1', date: '2026-10-20', amount: 91000, accountId: 'BS' }] } } });
+    var dl = C.brokerLegs(dirBs);
+    eq('Directo: un solo movimiento, Yorman me paga la diferencia (91.000 Bs)', dl.map(function (l) { return [l.role, l.dir, l.person, l.currency, l.total, l.status]; }), [['diff', 'in', 'Yorman', 'VES', 91000, 'pagada']]);
+    eq('Directo con la diferencia en dólares: 45,50 USD', C.brokerLegs(Object.assign({}, dirBs, { diffCurrency: 'USD', legs: {} }))[0].total, 45.5);
+    eq('Directo con pérdida: le pago yo la diferencia al vendedor (Ximena)', (function () { var l = C.brokerLegs(Object.assign({}, bkBase, { buyRate: 2000, sellRate: 1090, mode: 'directo', legs: {} }))[0]; return [l.dir, l.person, l.total]; })(), ['out', 'Ximena', 91000]);
+    var bkState = function (list) { return { settings: { baseCurrency: 'USD', rates: { USD: 1, VES: 0.0025 } }, accounts: [{ id: 'US', name: 'Zelle', currency: 'USD', initialBalance: 0 }, { id: 'BS', name: 'Banco Bs', currency: 'VES', initialBalance: 0 }],
+      transactions: [], investments: [], debts: [], exchanges: [], sales: [], loans: [], brokerages: list }; };
+    var bal = function (st) { var o = {}; C.accountBalances(st).forEach(function (a) { o[a.account.id] = a.balance; }); return o; };
+    var s1 = bkState([dirBs]);
+    eq('Directo completado: solo entra la diferencia en la cuenta de Bs', bal(s1), { US: 0, BS: 91000 });
+    var ft = C.flowTransactions(s1).filter(function (t) { return t.id === 'br_bk1'; })[0];
+    eq('La ganancia cuenta como «Cambios de divisa»: ingreso de 45,50 USD el 20/10', [ft.type, ft.amount, ft.currency, ft.categoryId, ft.date], ['ingreso', 45.5, 'USD', '__cambios', '2026-10-20']);
+    eq('Y aparece en el resultado de ese día (cambios +45,50)', C.dailyResult(C.flowTransactions(s1), s1.settings.rates, '2026-10').days[19].fx, 45.5);
+    var pm = function (id, amount, acc, date) { return { id: id, date: date || '2026-10-20', amount: amount, accountId: acc }; };
+    var porMi = Object.assign({}, bkBase, { mode: 'por_mi', legs: {
+      asset_in: { accountId: 'US', payments: [pm('a1', 100, 'US')] }, asset_out: { accountId: 'US', payments: [pm('a2', 100, 'US')] },
+      pay_in: { accountId: 'BS', payments: [pm('a3', 150000, 'BS', '2026-10-21')] }, pay_out: { accountId: 'BS', payments: [pm('a4', 109000, 'BS')] } } });
+    var s2 = bkState([porMi]), st2 = C.brokerStatus(porMi);
+    eq('Todo pasa por mí: 4 movimientos (100 USD, 100 USD, 200.000 Bs, 109.000 Bs)', st2.legs.map(function (l) { return l.total; }), [100, 100, 200000, 109000]);
+    eq('Yorman pagó 150.000 de 200.000 Bs → parcial', [st2.status, st2.legs[2].pending], ['parcial', 50000]);
+    eq('Saldos: USD +100 − 100 = 0; Bs +150.000 − 109.000 = 41.000', bal(s2), { US: 0, BS: 41000 });
+    var tp2 = C.thirdParty(s2, '2026-10-30');
+    eq('Por cobrar a Yorman: 50.000 Bs, valen 50.000 ÷ 2.000 = 25 USD (tasa de la operación, no la oficial)',
+      tp2.receivables.map(function (i) { return [i.source, i.person, i.pending, i.currency, i.pendingBase]; }), [['intermediacion', 'Yorman', 50000, 'VES', 25]]);
+    eq('Nada por pagar (lo demás se hizo el mismo día)', tp2.payables.length, 0);
+    eq('Sin completar, la ganancia aún no cuenta', C.flowTransactions(s2).some(function (t) { return t.id === 'br_bk1'; }), false);
+    var lgB = C.ledger(s2);
+    eq('Historial: la operación + 4 registros de dinero', lgB.map(function (r) { return r.kind; }).sort(), ['cobro_intermediacion', 'cobro_intermediacion', 'intermediacion', 'pago_intermediacion', 'pago_intermediacion']);
+    var hy = C.personHistory(s2, C.personKey('Yorman'), '2026-10-30')[0];
+    eq('Ficha de Yorman: compró, le falta pagar 50.000 Bs', [hy.kind, hy.role, hy.status, hy.pending, hy.pendingCurrency], ['intermediacion', 'compra', 'parcial', 50000, 'VES']);
+    eq('Ximena y Yorman cuentan la operación en su ficha', C.peopleIndex(s2, '2026-10-30').map(function (p) { return p.name + ':' + p.exchanges; }).sort(), ['Ximena:1', 'Yorman:1']);
+
     section('Resultado por día (Análisis)');
     var drT = [
       { type: 'ingreso', date: '2026-10-01', amount: 100, currency: 'USD', categoryId: 'c1', accountId: 'A' },
@@ -428,7 +467,7 @@
     eq('Con touchAll, la versión restaurada gana (100)', afterSync.transactions.filter(function (t) { return t.id === 'r1'; })[0].amount, 100);
     eq('touchAll revive registros que estaban borrados', Store.touchAll({ transactions: [{ id: 'x' }], deleted: { x: 1 } }, 5).deleted, {});
     eq('Resumen de una versión (incluye ventas y préstamos)', B.summarize({ accounts: [1, 2], transactions: [1], investments: [], debts: [1], exchanges: [], sales: [1, 2, 3], loans: [1] }),
-      { accounts: 2, transactions: 1, investments: 0, debts: 1, exchanges: 0, sales: 3, loans: 1 });
+      { accounts: 2, transactions: 1, investments: 0, debts: 1, exchanges: 0, sales: 3, loans: 1, brokerages: 0 });
 
     section('Registro rápido y gestos (Sprint 1)');
     var useRecs = [

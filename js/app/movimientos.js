@@ -43,7 +43,8 @@ function txItem(t, withActions) {
 var LG_KIND = {
   ingreso: ['Ingreso', 'i-in', 'in'], egreso: ['Gasto', 'i-out', 'out'], transferencia: ['Transferencia', 'i-swap', 'tr'],
   compra: ['Compra de inversión', 'i-chart', 'out'], venta_inv: ['Venta de inversión', 'i-chart', 'in'],
-  cambio: ['Cambio', 'i-swap', 'tr'], cobro_cambio: ['Cobro de cambio', 'i-in', 'in'], entrega_cambio: ['Entrega de cambio', 'i-out', 'out'],
+  cambio: ['Cambio', 'i-swap', 'tr'], intermediacion: ['Intermediación', 'i-swap', 'tr'],
+  cobro_intermediacion: ['Cobro de intermediación', 'i-in', 'in'], pago_intermediacion: ['Pago de intermediación', 'i-out', 'out'], cobro_cambio: ['Cobro de cambio', 'i-in', 'in'], entrega_cambio: ['Entrega de cambio', 'i-out', 'out'],
   venta: ['Venta', 'i-in', 'in'], cobro_venta: ['Cobro de venta', 'i-in', 'in'],
   prestamo_dado: ['Préstamo dado', 'i-out', 'out'], prestamo_recibido: ['Préstamo recibido', 'i-in', 'in'],
   cobro_prestamo: ['Pago recibido de préstamo', 'i-in', 'in'], pago_prestamo: ['Pago de préstamo', 'i-out', 'out'],
@@ -62,6 +63,7 @@ function lgConcept(r) {
   if (r.kind === 'ingreso' || r.kind === 'egreso') return catName(r.categoryId);
   if (r.kind === 'transferencia') return accName(e.from) + ' → ' + accName(e.to) + (e.toCurrency && e.toCurrency !== r.currency ? ' (' + fmtMoney(e.toAmount, e.toCurrency) + ')' : '');
   if (r.kind === 'compra' || r.kind === 'venta_inv') return r.concept + ' · ' + fmtNum(e.quantity) + ' × ' + fmtPrice(e.price, r.currency);
+  if (r.kind === 'intermediacion') return fmtMoney(r.amount, r.currency) + ' · ' + fmtNum(e.buyRate, 0, 4) + ' → ' + fmtNum(e.sellRate, 0, 4) + ' ' + e.payCurrency + ' · ganancia ' + fmtSigned(e.profit, r.currency);
   if (r.kind === 'cambio') return fmtMoney(e.received, e.inCurrency) + ' → ' + fmtMoney(e.delivered, e.outCurrency) + ' · ganancia ' + fmtSigned(e.profit, base());
   if ((r.kind === 'cobro_prestamo' || r.kind === 'pago_prestamo') && e.interest > 0) return 'incluye intereses ' + fmtMoney(e.interest, r.currency);
   return r.concept || '';
@@ -71,6 +73,7 @@ function lgPartsText(r) {
   if (!r.parts.length) {
     var why = r.kind === 'venta' ? 'A crédito: el dinero entra con cada cobro'
       : r.kind === 'cambio' && r.status ? 'El dinero se mueve con cada cobro o entrega'
+      : r.kind === 'intermediacion' ? 'El dinero se mueve con cada cobro y pago (filas aparte)'
       : r.kind === 'deuda_cobrar' || r.kind === 'deuda_pagar' ? 'Solo registro: no salió ni entró dinero al crearla'
       : 'No mueve ninguna cuenta';
     return '<span class="muted">' + why + '</span>';
@@ -132,6 +135,7 @@ function openLedgerRow(kind, id, pay) {
   else if (kind === 'fx') { var x = byId(state.exchanges, id), st = x && C.exchangeSettlement(x); if (pay || (st && st.status !== 'pagada')) openFxSettle(id); else editFx(id); }
   else if (kind === 'sale') { var sv = byId(state.sales, id); if (pay || (sv && sv.mode === 'credito')) openRef('sale', id); else editSale(id); }
   else if (kind === 'loan') openRef('loan', id);
+  else if (kind === 'broker') openRef('broker', id, { leg: pay ? String(pay).split(':')[0] : null });
   else if (kind === 'debt') editDebt(id);
 }
 function exportLedgerCSV() {
