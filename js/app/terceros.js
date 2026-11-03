@@ -13,7 +13,8 @@ var STABLE = { USDT: 1, USDC: 1 };
 function setAccTab(tab) {
   if (tab !== accTab) { payFx = null; payRef = null; }
   accTab = tab;
-  $$('#acc-tabs button, .subtabs button').forEach(function (b) { b.setAttribute('aria-selected', b.dataset.accTab === tab ? 'true' : 'false'); });
+  $$('.debt-kind button').forEach(function (b) { b.setAttribute('aria-selected', b.dataset.accTab === tab ? 'true' : 'false'); });
+  if (tab === 'cobrar' || tab === 'pagar') $('#debt-new-btn').textContent = tab === 'cobrar' ? '＋ Nueva cuenta por cobrar' : '＋ Nueva cuenta por pagar';
   $('#acc-panel-cuentas').classList.toggle('hidden', tab !== 'cuentas');
   $('#acc-panel-deudas').classList.toggle('hidden', tab !== 'cobrar' && tab !== 'pagar');
   $('#acc-panel-cambios').classList.toggle('hidden', tab !== 'cambios');

@@ -48,7 +48,7 @@ function openAsset(type, ticker) {
   };
   // Mostrar la vista (pestaña Inversiones activa)
   $$('.view').forEach(function (v) { v.classList.toggle('active', v.id === 'view-activo'); });
-  $$('#tabs button').forEach(function (b) { b.classList.toggle('active', b.dataset.view === 'inversiones'); });
+  setSection('activo');
   $('#settings-btn').classList.remove('active');
   var hash = '#activo/' + type + '/' + encodeURIComponent(ticker);
   if (location.hash !== hash) history.replaceState(null, '', hash);

@@ -834,6 +834,23 @@
     });
   }
 
+  // =================================================================== «Para hoy» (Inicio)
+  /**
+   * Lo que hay que atender, a partir de thirdParty: vencido (lo más atrasado primero), lo que vence en `days` días
+   * (lo más próximo primero) y cambios/intermediaciones por cobrar o entregar (no tienen vencimiento). dir: 'in' te deben, 'out' debes.
+   */
+  function agenda(tp, today, days) {
+    days = days == null ? 3 : days;
+    var all = tp.receivables.map(function (i) { return Object.assign({ dir: 'in' }, i); })
+      .concat(tp.payables.map(function (i) { return Object.assign({ dir: 'out' }, i); }))
+      .filter(function (i) { return i.status !== 'pagada'; });
+    var overdue = all.filter(function (i) { return i.overdue; }).sort(function (a, b) { return a.daysToDue - b.daysToDue; });
+    var soon = all.filter(function (i) { return !i.overdue && i.daysToDue != null && i.daysToDue <= days; }).sort(function (a, b) { return a.daysToDue - b.daysToDue; });
+    var ops = all.filter(function (i) { return (i.source === 'cambio' || i.source === 'intermediacion') && i.dueDate == null; })
+      .sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
+    return { overdue: overdue, soon: soon, ops: ops, count: overdue.length + soon.length + ops.length };
+  }
+
   // =================================================================== Historial de cobros y pagos
   var PAY_SECTION = { cobro_cambio: 'cambio', entrega_cambio: 'cambio', cobro_venta: 'venta', cobro_prestamo: 'prestamo', pago_prestamo: 'prestamo',
     abono_recibido: 'deuda', abono_pagado: 'deuda', cobro_intermediacion: 'intermediacion', pago_intermediacion: 'intermediacion' };
@@ -1568,7 +1585,7 @@
     flowTransactions: flowTransactions,
     samePeg: samePeg,
     searchItems: searchItems, txAmount: txAmount,
-    ledger: ledger, ledgerIssues: ledgerIssues, ledgerSort: ledgerSort, ledgerFilter: ledgerFilter, paymentRows: paymentRows, paymentFilter: paymentFilter, globalSearch: globalSearch,
+    ledger: ledger, ledgerIssues: ledgerIssues, ledgerSort: ledgerSort, ledgerFilter: ledgerFilter, paymentRows: paymentRows, paymentFilter: paymentFilter, agenda: agenda, globalSearch: globalSearch,
     splitsOf: splitsOf, paySplits: paySplits, fxSplits: fxSplits, splitAmount: splitAmount, checkSplits: checkSplits,
     transferFee: transferFee,
     parseAmount: parseAmount, parseNum: parseNum,

@@ -359,6 +359,16 @@ dialog::backdrop { background: rgba(0, 0, 0, .35); }
 .seg-sm { margin: 0; }
 .seg-sm label { padding: 5px 12px; font-size: .8rem; }
 .catbars { display: grid; gap: 12px; }
+/* Navegación por tareas y formularios plegados */
+[data-fgroup].fg-closed { display: none !important; }
+.fbar { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 12px; }
+.fbar button { flex: 1 1 auto; min-height: 44px; }
+.subnav { margin: 6px 0 12px; }
+.subtabs.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.q-ops { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 2px 0 10px; }
+.q-ops button { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 7px 2px; font-size: .72rem; min-height: 54px; }
+.q-ops .ic { width: 18px; height: 18px; }
+#agenda-list .amt { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
 /* Bloqueo de la app */
 .lock-screen { display: none; }
 html.locked body > *:not(#lock-screen) { visibility: hidden !important; }

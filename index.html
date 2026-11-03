@@ -51,6 +51,7 @@
 
   <!-- Iconos reutilizables -->
   <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-users" viewBox="0 0 24 24"><path d="M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm-7 9c0-3.3 3.1-6 7-6s7 2.7 7 6v1H2zm15.5-9.2a3.3 3.3 0 0 0 0-6.6 4.9 4.9 0 0 1 0 6.6zM18.3 14c2.2.6 3.7 2.6 3.7 4.9V21h-4v-1c0-2.4-.7-4.4-2-6 .8 0 1.6 0 2.3 0z"/></symbol>
     <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></symbol>
     <symbol id="i-moves" viewBox="0 0 24 24"><path d="M7 20V4M3 8l4-4 4 4M17 4v16M13 16l4 4 4-4"/></symbol>
     <symbol id="i-wallet" viewBox="0 0 24 24"><path d="M19 7V5a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-4a2 2 0 0 0 0 4h4v2a1 1 0 0 1-1 1H5a2 2 0 0 1-2-2V6"/></symbol>
@@ -92,19 +93,26 @@
   </header>
 
   <nav class="tabs" id="tabs" aria-label="Secciones">
-    <button type="button" data-view="inicio"><svg class="ic"><use href="#i-home"/></svg><span>Inicio</span></button>
-    <button type="button" data-view="movimientos"><svg class="ic"><use href="#i-moves"/></svg><span>Movimientos</span></button>
-    <button type="button" data-view="cuentas"><svg class="ic"><use href="#i-wallet"/></svg><span>Cuentas</span></button>
-    <button type="button" data-view="inversiones"><svg class="ic"><use href="#i-chart"/></svg><span>Inversiones</span></button>
-    <button type="button" data-view="analisis"><svg class="ic"><use href="#i-analysis"/></svg><span>Análisis</span></button>
+    <button type="button" data-tab="inicio" data-view="inicio"><svg class="ic"><use href="#i-home"/></svg><span>Inicio</span></button>
+    <button type="button" data-tab="movimientos" data-view="movimientos"><svg class="ic"><use href="#i-moves"/></svg><span>Movimientos</span></button>
+    <button type="button" data-tab="operaciones" data-view="cuentas/cambios"><svg class="ic"><use href="#i-swap"/></svg><span>Operaciones</span></button>
+    <button type="button" data-tab="clientes" data-view="cuentas/clientes"><svg class="ic"><use href="#i-users"/></svg><span>Clientes</span></button>
+    <button type="button" data-tab="patrimonio" data-view="cuentas"><svg class="ic"><use href="#i-wallet"/></svg><span>Patrimonio</span></button>
   </nav>
 
   <main>
     <div id="legacy-banner" class="legacy-banner hidden"></div>
+    <div class="subtabs subnav hidden" id="subnav" role="tablist" aria-label="Secciones"></div>
     <!-- ================= INICIO ================= -->
     <section id="view-inicio" class="view">
       <div id="warnings"></div>
       <div id="backup-reminder"></div>
+
+      <div class="card" id="agenda-card">
+        <div class="card-head wrap"><h2>Para hoy</h2><span class="muted small" id="agenda-fx"></span></div>
+        <ul class="list" id="agenda-list"></ul>
+        <div class="btn-row hidden" id="agenda-more"><button type="button" class="link" data-goto="cuentas/cobrar">Ver todos los pendientes</button></div>
+      </div>
 
       <div class="hero">
         <div class="eyebrow">¿Cuánto tengo?</div>
@@ -153,7 +161,8 @@
 
     <!-- ================= MOVIMIENTOS ================= -->
     <section id="view-movimientos" class="view">
-      <form id="tx-form" class="card form" autocomplete="off" novalidate>
+      <div class="fbar" data-fbar="tx"><button type="button" class="primary" data-fg-open="tx">＋ Registrar ingreso, gasto o transferencia</button></div>
+      <form id="tx-form" class="card form" data-fgroup="tx" autocomplete="off" novalidate>
         <div class="seg seg-3" role="radiogroup" aria-label="Tipo de movimiento">
           <input type="radio" name="type" id="t-egreso" value="egreso" checked><label for="t-egreso">Gasto</label>
           <input type="radio" name="type" id="t-ingreso" value="ingreso"><label for="t-ingreso">Ingreso</label>
@@ -284,15 +293,6 @@
 
     <!-- ================= CUENTAS ================= -->
     <section id="view-cuentas" class="view">
-      <div class="subtabs" role="tablist" aria-label="Secciones de cuentas">
-        <button type="button" role="tab" data-acc-tab="cuentas">Mis cuentas</button>
-        <button type="button" role="tab" data-acc-tab="cobrar">Por cobrar</button>
-        <button type="button" role="tab" data-acc-tab="pagar">Por pagar</button>
-        <button type="button" role="tab" data-acc-tab="cambios">Cambios</button>
-        <button type="button" role="tab" data-acc-tab="ventas">Ventas</button>
-        <button type="button" role="tab" data-acc-tab="prestamos">Préstamos</button>
-        <button type="button" role="tab" data-acc-tab="clientes">Clientes</button>
-      </div>
       <datalist id="people-list"></datalist>
 
       <!-- ---------- Mis cuentas ---------- -->
@@ -303,9 +303,10 @@
         <div class="hero-sub" id="acc-month"></div>
       </div>
 
+      <div class="fbar" data-fbar="acc"><button type="button" class="primary" data-fg-open="acc">＋ Nueva cuenta</button></div>
       <div class="acc-grid" id="acc-grid"></div>
 
-      <form id="acc-form" class="card form" autocomplete="off" novalidate>
+      <form id="acc-form" class="card form" data-fgroup="acc" autocomplete="off" novalidate>
         <h2 id="acc-form-title">Nueva cuenta</h2>
         <div class="grid">
           <label class="span2">Nombre<input name="label" maxlength="40" placeholder="Ej.: Banco, Efectivo, Binance" required></label>
@@ -327,11 +328,16 @@
 
       <!-- ---------- Por cobrar / Por pagar (mismo panel) ---------- -->
       <div id="acc-panel-deudas" class="acc-panel hidden">
+        <div class="subtabs two debt-kind" role="tablist" aria-label="Te deben o debes">
+          <button type="button" role="tab" data-acc-tab="cobrar">Te deben</button>
+          <button type="button" role="tab" data-acc-tab="pagar">Debes</button>
+        </div>
         <div class="hero compact">
           <div class="eyebrow" id="debt-eyebrow">Te deben</div>
           <div class="hero-value" id="debt-total">—</div>
           <div class="hero-sub" id="debt-sub"></div>
         </div>
+        <div class="fbar" data-fbar="debt"><button type="button" class="primary" data-fg-open="debt" id="debt-new-btn">＋ Nueva cuenta por cobrar</button></div>
 
         <div class="card">
           <div class="card-head wrap">
@@ -373,7 +379,7 @@
           </form>
         </div>
 
-        <form id="debt-form" class="card form" autocomplete="off" novalidate>
+        <form id="debt-form" class="card form" data-fgroup="debt" autocomplete="off" novalidate>
           <div class="card-head form-head"><h2 id="debt-form-title">Nueva cuenta por cobrar</h2><button type="button" class="pay-edit hidden" data-action="rcpt-form" data-kind="debt"><svg class="ic"><use href="#i-doc"/></svg><span>Comprobante</span></button></div>
           <div class="grid">
             <label class="span2"><span id="debt-person-label">¿Quién te debe?</span><input name="person" data-people autocomplete="off" maxlength="60" placeholder="Nombre" required></label>
@@ -403,12 +409,14 @@
           <div class="stat-row" id="fx-stats"></div>
         </div>
 
-        <div class="seg fx-kind" role="radiogroup" aria-label="Tipo de operación">
+        <div class="fbar" data-fbar="fx"><button type="button" class="primary" data-fg-open="fx" data-kind="normal">＋ Nuevo cambio</button>
+          <button type="button" data-fg-open="fx" data-kind="broker">＋ Intermediación</button></div>
+        <div class="seg fx-kind" data-fgroup="fx" role="radiogroup" aria-label="Tipo de operación">
           <input type="radio" name="fx-kind" id="fk-normal" value="normal" checked><label for="fk-normal">Cambio normal</label>
           <input type="radio" name="fx-kind" id="fk-broker" value="broker"><label for="fk-broker">Intermediación</label>
         </div>
 
-        <form id="fx-form" class="card form" autocomplete="off" novalidate>
+        <form id="fx-form" class="card form" data-fgroup="fx" autocomplete="off" novalidate>
           <div class="card-head form-head"><h2 id="fx-form-title">Nuevo cambio</h2><button type="button" class="pay-edit hidden" data-action="rcpt-form" data-kind="fx"><svg class="ic"><use href="#i-doc"/></svg><span>Comprobante</span></button></div>
           <p class="warning hidden" id="fx-settle-hint"></p>
           <div class="grid">
@@ -475,7 +483,7 @@
           <input type="hidden" name="editId">
         </form>
 
-        <form id="br-form" class="card form hidden" autocomplete="off" novalidate>
+        <form id="br-form" class="card form hidden" data-fgroup="fx" autocomplete="off" novalidate>
           <div class="card-head form-head"><h2 id="br-form-title">Nueva intermediación</h2><button type="button" class="pay-edit hidden" data-action="rcpt-form" data-kind="broker"><svg class="ic"><use href="#i-doc"/></svg><span>Comprobante</span></button></div>
           <p class="hint">Le compras a un cliente y le vendes a otro: tu ganancia es la diferencia entre las dos tasas, en dólares.</p>
           <div class="grid">
@@ -532,7 +540,8 @@
         </div>
         <div data-pay-anchor></div>
 
-        <form id="sale-form" class="card form" autocomplete="off" novalidate>
+        <div class="fbar" data-fbar="sale"><button type="button" class="primary" data-fg-open="sale">＋ Nueva venta</button></div>
+        <form id="sale-form" class="card form" data-fgroup="sale" autocomplete="off" novalidate>
           <div class="card-head form-head"><h2 id="sale-form-title">Nueva venta</h2><button type="button" class="pay-edit hidden" data-action="rcpt-form" data-kind="sale"><svg class="ic"><use href="#i-doc"/></svg><span>Comprobante</span></button></div>
           <div class="seg" role="radiogroup" aria-label="Forma de pago">
             <input type="radio" name="mode" id="sm-contado" value="contado" checked><label for="sm-contado">De contado</label>
@@ -611,6 +620,7 @@
           <div class="hero-value" id="loan-total">—</div>
           <div class="stat-row" id="loan-stats"></div>
         </div>
+        <div class="fbar" data-fbar="loan"><button type="button" class="primary" data-fg-open="loan">＋ Nuevo préstamo</button></div>
         <div data-pay-anchor></div>
 
         <div class="card">
@@ -624,7 +634,7 @@
           <ul class="list" id="loan-list"></ul>
         </div>
 
-        <form id="loan-form" class="card form" autocomplete="off" novalidate>
+        <form id="loan-form" class="card form" data-fgroup="loan" autocomplete="off" novalidate>
           <div class="card-head form-head"><h2 id="loan-form-title">Nuevo préstamo</h2><button type="button" class="pay-edit hidden" data-action="rcpt-form" data-kind="loan"><svg class="ic"><use href="#i-doc"/></svg><span>Comprobante</span></button></div>
           <p class="hint hidden" id="loan-edit-hint"></p>
           <div class="seg" role="radiogroup" aria-label="Tipo de préstamo">
@@ -1182,10 +1192,15 @@
         <input type="radio" name="qtype" id="q-egreso" value="egreso" checked><label for="q-egreso">Gasto</label>
         <input type="radio" name="qtype" id="q-ingreso" value="ingreso"><label for="q-ingreso">Ingreso</label>
       </div>
-      <div class="sheet-links">
-        <button type="button" class="link small" data-action="quick-transfer">Transferencia</button>
-        <button type="button" class="link small" data-action="quick-exchange">Cambio</button>
-      </div>
+    </div>
+    <div class="q-ops" role="group" aria-label="Otra operación">
+      <button type="button" data-quick="transfer"><svg class="ic"><use href="#i-swap"/></svg>Transferencia</button>
+      <button type="button" data-quick="exchange"><svg class="ic"><use href="#i-swap"/></svg>Cambio</button>
+      <button type="button" data-quick="broker"><svg class="ic"><use href="#i-users"/></svg>Intermediación</button>
+      <button type="button" data-quick="sale"><svg class="ic"><use href="#i-in"/></svg>Venta</button>
+      <button type="button" data-quick="loan"><svg class="ic"><use href="#i-out"/></svg>Préstamo</button>
+      <button type="button" data-quick="debt"><svg class="ic"><use href="#i-doc"/></svg>Deuda</button>
+      <button type="button" data-quick="collect"><svg class="ic"><use href="#i-in"/></svg>Cobro o pago</button>
     </div>
     <div class="q-say">
       <input name="say" type="text" placeholder="Escribe o dicta: «gasté 25 en comida con tarjeta»" aria-label="Frase del movimiento" enterkeyhint="go" autocomplete="off">
@@ -1335,6 +1350,7 @@
   <script src="js/app/busqueda.js"></script>
   <script src="js/app/pagos.js"></script>
   <script src="js/app/bloqueo.js"></script>
+  <script src="js/app/navegacion.js"></script>
   <script src="js/app/eventos.js"></script>
   <script src="js/app/init.js"></script>
 </body>

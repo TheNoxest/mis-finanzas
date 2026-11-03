@@ -330,6 +330,20 @@
     eq('El saldo del banco no cambia por la custodia (se pagó desde ahí)', C.accountHoldings(moved, 'A').cash, 6212);
     eq('Suma de cuentas + activos = patrimonio sin terceros', C.round(['A', 'B', 'C', 'D'].reduce(function (s, id) { return s + C.accountHoldings(state, id).total; }, 0)), nw.total);
 
+    section('«Para hoy» en Inicio');
+    var agTp = { receivables: [
+        { source: 'deuda', id: 'a', person: 'Ana', status: 'pendiente', overdue: true, daysToDue: -5, dueDate: '2026-10-28', date: '2026-10-01' },
+        { source: 'venta', id: 'b', person: 'Luis', status: 'parcial', overdue: true, daysToDue: -1, dueDate: '2026-11-01', date: '2026-10-02' },
+        { source: 'prestamo', id: 'c', person: 'Pedro', status: 'pendiente', overdue: false, daysToDue: 2, dueDate: '2026-11-04', date: '2026-09-01' },
+        { source: 'prestamo', id: 'd', person: 'Rosa', status: 'pendiente', overdue: false, daysToDue: 10, dueDate: '2026-11-12', date: '2026-09-01' },
+        { source: 'cambio', id: 'e', person: 'Juan', status: 'pendiente', overdue: false, daysToDue: null, dueDate: null, date: '2026-10-30' },
+        { source: 'deuda', id: 'f', person: 'Saldada', status: 'pagada', overdue: false, daysToDue: -9, dueDate: '2026-10-20', date: '2026-10-01' }],
+      payables: [{ source: 'deuda', id: 'g', person: 'Banco', status: 'pendiente', overdue: false, daysToDue: 0, dueDate: '2026-11-02', date: '2026-10-01' }] };
+    var ag = C.agenda(agTp, '2026-11-02', 3);
+    eq('Vencidas: la más atrasada primero (Ana −5 d, Luis −1 d); lo saldado no sale', ag.overdue.map(function (i) { return i.id; }), ['a', 'b']);
+    eq('Por vencer en 3 días: hoy (debes al banco) y en 2 d (cuota de Pedro); en 10 d no', ag.soon.map(function (i) { return i.id + ':' + i.dir; }), ['g:out', 'c:in']);
+    eq('Cambios por cobrar o entregar (sin vencimiento)', ag.ops.map(function (i) { return i.id; }), ['e']);
+
     section('Bloqueo de la app (PIN)');
     var LK = window.Lock;
     eq('PIN válido: 4 a 8 números', [LK.validPin('1234'), LK.validPin('12345678'), LK.validPin('123'), LK.validPin('12a4'), LK.validPin('123456789')], [true, true, false, false, false]);

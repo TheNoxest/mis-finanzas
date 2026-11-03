@@ -221,7 +221,7 @@ function showView(name) {
   if (parts[0] === 'cuentas') { accTab = ['cobrar', 'pagar', 'cambios', 'ventas', 'prestamos', 'clientes'].indexOf(parts[1]) !== -1 ? parts[1] : 'cuentas'; name = 'cuentas'; }
   if (VIEWS.indexOf(name) === -1) name = 'inicio';
   $$('.view').forEach(function (v) { v.classList.toggle('active', v.id === 'view-' + name); });
-  $$('#tabs button').forEach(function (b) { b.classList.toggle('active', b.dataset.view === name); });
+  setSection(name, accTab);
   $('#settings-btn').classList.toggle('active', name === 'ajustes');
   Charts.hideTip();
   if (typeof renderIfStale === 'function') renderIfStale(name);   // pantalla que quedó pendiente al guardar en otra

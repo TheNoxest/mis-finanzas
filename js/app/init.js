@@ -26,6 +26,7 @@ $('#fx-month').value = thisMonth();
 $('#sale-month').value = thisMonth();
 resetSaleForm();
 resetLoanForm();
+fgCloseAll();   // formularios plegados: primero se ven las listas
 renderAll();
 if (!state.investments.length) $('#inv-details').open = true;
 var receiveMode = location.hash === '#recibir' && !!window.opener;   // abierta por la versión anterior para recibir datos

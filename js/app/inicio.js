@@ -6,7 +6,33 @@
 'use strict';
 
 // ================================================================ inicio
+/** «Para hoy»: lo vencido, lo que vence en 3 días y los cambios por cobrar o entregar (Calc.agenda). */
+var AG_KIND = { deuda: 'debt', venta: 'sale', prestamo: 'loan', cambio: 'fx', intermediacion: 'broker' };
+function renderAgenda() {
+  var b = base(), today = S.today(), a = C.agenda(C.thirdParty(state, today), today, 3);
+  var fx = C.dailyResult(flows(), rates(), thisMonth()).fx;
+  $('#agenda-fx').innerHTML = fx ? 'Cambios este mes: <b class="' + trend(fx) + '">' + fmtSigned(fx, b) + '</b>' : '';
+  var rows = a.overdue.concat(a.soon, a.ops);
+  var when = function (it) {
+    if (it.overdue) return '<span class="tag danger">Vencida hace ' + Math.abs(it.daysToDue) + ' d</span>';
+    if (it.daysToDue === 0) return '<span class="tag warn">Vence hoy</span>';
+    if (it.daysToDue != null) return '<span class="tag warn">Vence en ' + it.daysToDue + ' d</span>';
+    return '<span class="tag">' + (it.dir === 'in' ? 'Falta cobrar' : 'Falta entregar o pagar') + '</span>';
+  };
+  $('#agenda-list').innerHTML = rows.length ? rows.slice(0, 8).map(function (it) {
+    var attr = it.source === 'cambio' ? 'data-settle-fx="' + it.id + '"' : it.source === 'venta' ? 'data-pay-ref="sale|' + it.id + '"'
+      : it.source === 'prestamo' ? 'data-pay-ref="loan|' + it.id + '"' : it.source === 'intermediacion' ? 'data-pay-ref="broker|' + it.id + '|' + it.leg + '"' : 'data-open-debt="' + it.id + '"';
+    var inn = it.dir === 'in';
+    return '<li class="clickable" ' + attr + ' tabindex="0" role="button"><span class="avatar ' + (inn ? 'in' : 'out') + '">' + icon(inn ? 'i-in' : 'i-out') + '</span>' +
+      '<div class="main"><div class="title">' + esc(it.person || 'Sin nombre') + ' ' + when(it) + '</div><div class="sub">' + (inn ? 'Te debe' : 'Le debes') + ' · ' + esc(it.concept || '') + '</div></div>' +
+      '<div class="amt"><span class="' + (inn ? 'up' : '') + '">' + fmtMoney(it.pending, it.currency) + '</span>' +
+      (inn ? '<button type="button" class="mini" data-action="wa-remind" data-kind="' + AG_KIND[it.source] + '" data-id="' + it.id + '" aria-label="Recordar por WhatsApp">' + icon('i-chat') + '</button>' : '') + '</div></li>';
+  }).join('') : '<li class="empty">Nada vencido ni por vencer en los próximos 3 días.</li>';
+  $('#agenda-more').classList.toggle('hidden', rows.length <= 8);
+}
+
 function renderHome() {
+  renderAgenda();
   var b = base();
   var nw = C.netWorth(state, S.today());
   var pf = nw.portfolio;
