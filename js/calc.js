@@ -1500,6 +1500,12 @@
     var rates = state.settings.rates;
     var snaps = state.snapshots || {};
     return dates.map(function (d) {
+      // Día con foto guardada (y sin filtros): se usa tal cual, sin reconstruir todo el patrimonio de ese día
+      var snap0 = snaps[d];
+      if (snap0 && d !== opts.today && !opts.accountId && !opts.assetType) {
+        return { date: d, cash: snap0.cash, invested: snap0.invested, terceros: snap0.terceros || 0,
+          total: round(snap0.cash + snap0.invested + (snap0.terceros || 0), 2), source: 'registro' };
+      }
       var sub = {
         settings: state.settings, accounts: state.accounts,
         transactions: state.transactions.filter(function (t) { return t.date <= d; }),
@@ -1539,10 +1545,6 @@
       }
       var tp = opts.accountId ? null : thirdParty(sub, d);
       var other = tp ? round(tp.receivableBase - tp.payableBase, 2) : 0;
-      var snap = snaps[d];
-      if (snap && d !== opts.today && !opts.accountId && !opts.assetType) {
-        cash = snap.cash; invested = snap.invested; other = snap.terceros || 0; source = 'registro';
-      }
       return { date: d, cash: cash, invested: invested, terceros: other, total: round(cash + invested + other, 2), source: source };
     });
   }

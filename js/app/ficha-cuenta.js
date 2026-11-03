@@ -14,6 +14,7 @@ function openAccount(id) {
   closeAsset();
   currentAccountId = id;
   $$('.view').forEach(function (v) { v.classList.toggle('active', v.id === 'view-cuenta'); });
+  if (typeof staleViews !== 'undefined') delete staleViews.cuenta;   // se dibuja abajo
   $$('#tabs button').forEach(function (b) { b.classList.toggle('active', b.dataset.view === 'cuentas'); });
   $('#settings-btn').classList.remove('active');
   var h = '#cuenta/' + id;

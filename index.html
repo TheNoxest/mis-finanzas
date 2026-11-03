@@ -22,10 +22,33 @@
         if (p.accent && p.accent !== 'azul') r.setAttribute('data-accent', p.accent);
         if (p.font && p.font !== 'm') r.setAttribute('data-font', p.font);
       } catch (e) { /* sin almacenamiento: apariencia por defecto */ }
+      // Bloqueo activado en este dispositivo: la app se tapa antes de pintar nada
+      try { if ((JSON.parse(localStorage.getItem('misFinanzas.lock')) || {}).enabled) document.documentElement.classList.add('locked'); } catch (e) { /* nada */ }
     })();
   </script>
 </head>
 <body>
+  <!-- Pantalla de bloqueo (PIN / huella / Face ID): solo se ve con <html class="locked"> -->
+  <div id="lock-screen" class="lock-screen" role="dialog" aria-modal="true" aria-labelledby="lock-title">
+    <div class="lock-box">
+      <div class="lock-logo" aria-hidden="true"><svg viewBox="0 0 24 24" class="ic"><path d="M7 10V7a5 5 0 0 1 10 0v3h1a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1zm2 0h6V7a3 3 0 0 0-6 0z"/></svg></div>
+      <h1 id="lock-title">Mis Finanzas</h1>
+      <p class="muted">La app está bloqueada</p>
+      <button type="button" class="primary hidden" id="lock-bio">Desbloquear con huella / Face ID</button>
+      <form id="lock-form" autocomplete="off" novalidate>
+        <input id="lock-pin" type="password" inputmode="numeric" autocomplete="off" maxlength="8" placeholder="PIN" aria-label="PIN">
+        <button type="submit" class="primary">Desbloquear</button>
+      </form>
+      <p class="lock-msg" id="lock-msg" role="status"></p>
+      <button type="button" class="link" id="lock-forgot">¿Olvidaste tu PIN?</button>
+      <div id="lock-reset" class="lock-reset hidden">
+        <p>Sin el PIN, la única forma de abrir la app es <b>borrar los datos de este dispositivo</b>. Si tienes la sincronización activa,
+          tus datos siguen en la nube y vuelven al iniciar sesión con tu cuenta y tu contraseña de cifrado.</p>
+        <button type="button" class="danger" id="lock-wipe">Borrar los datos de este dispositivo</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Iconos reutilizables -->
   <svg width="0" height="0" style="position:absolute" aria-hidden="true">
     <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></symbol>
@@ -974,6 +997,14 @@
           En el móvil: desliza un movimiento ← para borrarlo (con «Deshacer») o → para editarlo; arrastra hacia abajo desde arriba para sincronizar y actualizar precios.</p>
       </div>
 
+      <div class="card" id="lock-card">
+        <h2>Bloqueo de la app</h2>
+        <label class="switch"><input type="checkbox" id="lock-on"> <span>Pedir PIN (o huella / Face ID) para abrir la app</span></label>
+        <div id="lock-body"></div>
+        <p class="hint">Solo en este dispositivo (no se sincroniza). Protege la app si alguien usa tu teléfono; el PIN no se guarda, solo una
+          huella cifrada de él. Si lo olvidas, tendrás que borrar los datos del dispositivo y volver a entrar con tu cuenta.</p>
+      </div>
+
       <div class="card" id="look-card">
         <h2>Apariencia</h2>
         <p class="hint" style="margin-top:0">Se guarda en este dispositivo.</p>
@@ -1016,6 +1047,15 @@
         <p class="hint">El código de país se añade a los teléfonos de clientes escritos sin «+» (0412 555 1234 → +58 412 555 1234).
           Los comprobantes salen en PDF o imagen desde la tarjeta de cobros, el formulario de cada operación o el aviso al guardar.</p>
       </form>
+
+      <div class="card" id="storage-card">
+        <h2>Almacenamiento</h2>
+        <div id="storage-body"><p class="hint">Calculando…</p></div>
+        <div class="btn-row">
+          <button type="button" data-action="storage-persist" id="storage-persist">Proteger contra borrado automático</button>
+          <button type="button" data-action="storage-clean">Liberar caché de precios</button>
+        </div>
+      </div>
 
       <div class="card" id="versions-card">
         <h2>Copias y versiones</h2>
@@ -1270,6 +1310,7 @@
   <script src="js/backups.js"></script>
   <script src="js/sync.js"></script>
   <script src="js/receipt.js"></script>
+  <script src="js/lock.js"></script>
   <!-- Interfaz repartida por temas: comparten el ámbito global; core.js primero e init.js al final -->
   <script src="js/app/core.js"></script>
   <script src="js/app/inicio.js"></script>
@@ -1293,6 +1334,7 @@
   <script src="js/app/registro-rapido.js"></script>
   <script src="js/app/busqueda.js"></script>
   <script src="js/app/pagos.js"></script>
+  <script src="js/app/bloqueo.js"></script>
   <script src="js/app/eventos.js"></script>
   <script src="js/app/init.js"></script>
 </body>

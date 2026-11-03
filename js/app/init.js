@@ -6,6 +6,10 @@
 'use strict';
 
 // ================================================================ init
+// Los datos se leen de IndexedDB (asíncrono): la app arranca cuando están listos.
+S.ready.then(startApp, startApp);
+function startApp() {
+state = S.load();
 bind();
 $('#f-month').value = thisMonth();
 $('#lg-month').value = thisMonth();
@@ -31,7 +35,7 @@ recordSnapshot();
 S.save(state); // guarda la migración si la hubo
 Sync.onStatus(function (st) { renderSyncDot(); if ($('#view-ajustes').classList.contains('active')) renderSyncCard(); });
 Sync.init({
-  getState: function () { return state; },
+  getState: function () { S.flush(); return state; },   // lo guardado hace un instante ya marcado antes de combinar
   // Datos combinados de la nube: se adoptan sin marcarlos como cambios locales
   adoptState: function (s) { state = S.normalize(s); S.adopt(state); renderAll(); }
 });
@@ -104,4 +108,5 @@ if (receiveMode) {
     Sync.syncNow();
   });
   opener.postMessage({ type: 'mf-ready' }, '*');
+}
 }

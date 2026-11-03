@@ -24,6 +24,7 @@
   <script src="../js/voice.js"></script>
   <script src="../js/insights.js"></script>
   <script src="../js/receipt.js"></script>
+  <script src="../js/lock.js"></script>
   <script>
   (function () {
     var out = document.getElementById('out'), pass = 0, fail = 0, ol;
@@ -328,6 +329,14 @@
     eq('Custodia: BTC pagado desde el banco y guardado en Efectivo', [C.accountHoldings(moved, 'A').portfolio.value, C.accountHoldings(moved, 'B').portfolio.value], [1800, 3500]);
     eq('El saldo del banco no cambia por la custodia (se pagó desde ahí)', C.accountHoldings(moved, 'A').cash, 6212);
     eq('Suma de cuentas + activos = patrimonio sin terceros', C.round(['A', 'B', 'C', 'D'].reduce(function (s, id) { return s + C.accountHoldings(state, id).total; }, 0)), nw.total);
+
+    section('Bloqueo de la app (PIN)');
+    var LK = window.Lock;
+    eq('PIN válido: 4 a 8 números', [LK.validPin('1234'), LK.validPin('12345678'), LK.validPin('123'), LK.validPin('12a4'), LK.validPin('123456789')], [true, true, false, false, false]);
+    eq('«Siempre al salir»: bloquea al volver aunque sea al instante', LK.shouldLock({ enabled: true, after: 0 }, 1000, 1000), true);
+    eq('«Tras 5 min»: a los 4 min no, a los 5 sí', [LK.shouldLock({ enabled: true, after: 5 }, 0 + 1, 4 * 60000), LK.shouldLock({ enabled: true, after: 5 }, 1, 5 * 60000 + 1)], [false, true]);
+    eq('Sin bloqueo activado o sin haber salido: no bloquea', [LK.shouldLock({ enabled: false, after: 0 }, 1, 9e9), LK.shouldLock({ enabled: true, after: 0 }, null, 9e9)], [false, false]);
+    eq('Espera tras fallos: 4 → 0 s, 5 → 30 s, 6 → 60 s, 10 → 15 min (tope)', [LK.lockoutMs(4), LK.lockoutMs(5), LK.lockoutMs(6), LK.lockoutMs(10)], [0, 30000, 60000, 900000]);
 
     section('Historial de cobros y pagos');
     var pr0 = C.paymentRows(C.ledger(lnS0()), false), pr1 = C.paymentRows(C.ledger(lnS0()), true);
@@ -959,6 +968,13 @@
 
     // Cifrado (asíncrono): ida y vuelta, y contraseña incorrecta
     (async function () {
+      section('PIN del bloqueo (huella cifrada)');
+      var ph1 = await Lock.hashPin('2468', '00112233445566778899aabbccddeeff', 1000), ph2 = await Lock.hashPin('2468', '00112233445566778899aabbccddeeff', 1000);
+      var ph3 = await Lock.hashPin('2469', '00112233445566778899aabbccddeeff', 1000), ph4 = await Lock.hashPin('2468', 'ffeeddccbbaa99887766554433221100', 1000);
+      eq('Mismo PIN y sal → misma huella (64 caracteres, sin el PIN dentro)', [ph1 === ph2, ph1.length, ph1.indexOf('2468')], [true, 64, -1]);
+      eq('Otro PIN u otra sal → huella distinta', [ph1 !== ph3, ph1 !== ph4], [true, true]);
+      done();
+
       section('Cifrado de extremo a extremo');
       var K = Sync._crypto, salt = btoa('sal-de-prueba-16');
       var key = await K.deriveKey('mi clave segura', salt);

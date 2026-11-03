@@ -6,23 +6,29 @@
 'use strict';
 
 // ================================================================ render
+// Qué redibujar en cada pantalla. renderAll() redibuja solo la visible (y lo común: selectores y estado de
+// la sincronización); las demás quedan pendientes y se redibujan al abrirlas (showView → renderIfStale).
+var VIEW_RENDERERS = {
+  inicio: function () { renderHome(); renderBackupReminder(); renderAdvice(); },
+  movimientos: function () { renderTxList(); syncTxForm(); },
+  cuentas: function () { renderAccounts(); renderThirdParty(); },
+  inversiones: function () { renderPortfolio(); updateInvPreview(); },
+  analisis: function () { renderAnalysis(); },
+  consejos: function () { renderAdvice(); },
+  ajustes: function () { renderSettings(); renderVersionsCard(); renderStorageCard(); renderLockCard(); },
+  cuenta: function () { renderAccountView(); }
+};
+var staleViews = {};
+function activeViewName() { var v = document.querySelector('.view.active'); return v ? v.id.replace('view-', '') : 'inicio'; }
+function renderView(name) { if (VIEW_RENDERERS[name]) VIEW_RENDERERS[name](); delete staleViews[name]; }
+function renderIfStale(name) { if (staleViews[name]) renderView(name); }
 function renderAll() {
+  calcRev++;
   renderSelects();
-  renderHome();
-  renderTxList();
-  renderAccounts();
-  renderPortfolio();
-  renderSettings();
   renderSyncStatus();
-  syncTxForm();
-  updateInvPreview();
-  renderAnalysis();
-  renderAdvice();
-  renderBackupReminder();
-  renderThirdParty();
-  renderAccountView();
   renderSyncCard();
-  if ($('#view-ajustes').classList.contains('active')) renderVersionsCard();
+  Object.keys(VIEW_RENDERERS).forEach(function (v) { staleViews[v] = true; });
+  renderView(activeViewName());
 }
 
 // ================================================================ eventos
@@ -278,6 +284,8 @@ function bind() {
     if (receiptClick(d)) return;
     if (d.payEdit) { var pe = d.payEdit.split('|'); openPayEdit(pe[0], pe[1], pe[2]); return; }
     if (d.action === 'pg-more') { pgLimit += 150; renderPayHistory(); return; }
+    if (d.action === 'storage-persist') { S.persistStorage().then(function (ok) { toast(ok ? 'Listo: el navegador conservará tus datos' : 'El navegador no lo permitió (en el móvil suele concederse al instalar la app)'); renderStorageCard(); }); return; }
+    if (d.action === 'storage-clean') { try { localStorage.removeItem('misFinanzas.market'); } catch (e) { /* nada */ } toast('Caché de precios borrada (se vuelve a descargar al usarla)'); renderStorageCard(); return; }
     if (d.action === 'pg-csv') { exportPaymentsCSV(); return; }
     if (d.action === 'pg-clear') { clearPayFilters(); return; }
     if (d.action === 'debt-search-all') { $('#df-all').checked = true; renderDebts(); return; }

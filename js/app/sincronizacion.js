@@ -138,6 +138,31 @@ function fmtStamp(ms) {
   return new Date(ms).toLocaleString(LOCALE, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
+// ================================================================ almacenamiento (Ajustes)
+function fmtBytes(b) {
+  if (!(b >= 0)) return '—';
+  return b < 1024 ? b + ' B' : b < 1048576 ? fmtNum(b / 1024, 0, 0) + ' KB' : fmtNum(b / 1048576, 1, 1) + ' MB';
+}
+function renderStorageCard() {
+  var box = $('#storage-body'); if (!box) return;
+  S.info().then(function (i) {
+    var dataB = i.dataChars * 1.05;   // ≈ bytes (casi todo es texto ASCII)
+    var n = 0; S.COLLECTIONS.forEach(function (k) { n += (state[k] || []).length; });
+    var rows = [
+      ['Tus datos', fmtBytes(dataB) + ' · ' + fmtNum(n) + ' registros'],
+      ['Dónde se guardan', i.indexedDB ? 'IndexedDB del navegador (sin el límite de 5 MB)' : 'localStorage (límite de unos 5 MB)'],
+      ['Copia rápida en localStorage', i.indexedDB ? (i.mirror ? 'Sí (se quita sola al pasar de ' + fmtBytes(i.mirrorMax * 2) + ')' : 'No: los datos ya son grandes, solo IndexedDB') : 'Es el almacenamiento principal']
+    ];
+    if (i.usage != null) rows.push(['Espacio de la app en este navegador', fmtBytes(i.usage) + ' de ' + fmtBytes(i.quota) + ' disponibles']);
+    if (i.details) rows.push(['Detalle', ['indexedDB', 'caches', 'serviceWorkerRegistrations'].filter(function (k) { return i.details[k]; })
+      .map(function (k) { return ({ indexedDB: 'datos y copias (comprimidos)', caches: 'archivos de la app', serviceWorkerRegistrations: 'funcionamiento sin conexión' })[k] + ' ' + fmtBytes(i.details[k]); }).join(' · ')]);
+    rows.push(['Protección contra borrado', i.persisted ? 'Activada: el navegador no borrará estos datos por falta de espacio' : i.persisted === false ? 'Sin activar' : 'No disponible en este navegador']);
+    var warn = !i.indexedDB && dataB > 3.5 * 1048576 ? '<p class="warning">Tus datos se acercan al límite de localStorage y este navegador no permite IndexedDB. Descarga una copia de seguridad.</p>' : '';
+    box.innerHTML = warn + '<ul class="list kv-list">' + rows.map(function (r) { return '<li><div class="main"><div class="sub">' + esc(r[0]) + '</div><div class="title">' + esc(r[1]) + '</div></div></li>'; }).join('') + '</ul>';
+    $('#storage-persist').classList.toggle('hidden', !!i.persisted || i.persisted == null);
+  });
+}
+
 function renderVersionsCard() {
   var box = $('#local-versions'); if (!box || !window.Backups) return;
   Backups.list().then(function (list) {

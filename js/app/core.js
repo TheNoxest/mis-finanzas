@@ -7,7 +7,28 @@
 
 
 var C = window.Calc, S = window.Store, P = window.Prices;
-var state = S.load();
+var state = S.defaults();   // se carga de verdad en init.js, cuando el almacenamiento (IndexedDB) está listo
+
+// ---- Cálculos reutilizados: mientras los datos no cambien, cada cálculo pesado se hace una sola vez.
+// calcRev sube al redibujar todo (renderAll) y con cada clic, envío o cambio de un campo; así, lo calculado
+// para una pantalla sirve a las demás y al escribir en un buscador no se recalcula el historial en cada letra.
+var calcRev = 0;
+(function memoCalc() {
+  var cache = {}, rev = -1, of = null;
+  var wrap = function (obj, name, tag) {
+    var f = obj && obj[name];
+    if (typeof f !== 'function') return;
+    obj[name] = function (st) {
+      if (st !== state) return f.apply(obj, arguments);
+      if (rev !== calcRev || of !== state) { cache = {}; rev = calcRev; of = state; }
+      var key = tag + name + JSON.stringify(Array.prototype.slice.call(arguments, 1));
+      return key in cache ? cache[key] : (cache[key] = f.apply(obj, arguments));
+    };
+  };
+  ['flowTransactions', 'ledger', 'thirdParty', 'accountBalances', 'netWorth', 'netWorthSeries', 'peopleIndex'].forEach(function (n) { wrap(C, n, 'C.'); });
+  ['monthlySummary', 'annualReport'].forEach(function (n) { wrap(window.Insights, n, 'I.'); });
+  ['click', 'submit', 'change'].forEach(function (ev) { document.addEventListener(ev, function () { calcRev++; }, true); });
+})();
 
 var $ = function (s, el) { return (el || document).querySelector(s); };
 var $$ = function (s, el) { return Array.prototype.slice.call((el || document).querySelectorAll(s)); };
@@ -203,9 +224,10 @@ function showView(name) {
   $$('#tabs button').forEach(function (b) { b.classList.toggle('active', b.dataset.view === name); });
   $('#settings-btn').classList.toggle('active', name === 'ajustes');
   Charts.hideTip();
+  if (typeof renderIfStale === 'function') renderIfStale(name);   // pantalla que quedó pendiente al guardar en otra
   if (name === 'analisis') setTimeout(renderAnalysis, 0); // necesita el ancho visible
   if (name === 'inversiones') loadExplore(false);
-  if (name === 'ajustes') { cloudVersions = null; renderVersionsCard(); }
+  if (name === 'ajustes') { cloudVersions = null; renderVersionsCard(); renderStorageCard(); renderLockCard(); }
   if (name === 'cuentas') setAccTab(accTab);
   var h = '#' + name + (name === 'cuentas' && accTab !== 'cuentas' ? '/' + accTab : '');
   if (location.hash !== h) history.replaceState(null, '', h);

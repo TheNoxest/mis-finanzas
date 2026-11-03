@@ -1,6 +1,8 @@
 /* =========================================================================
- * store.js — Persistencia en localStorage, valores por defecto, migraciones,
- * copia de seguridad (JSON) y exportación CSV.
+ * store.js — Persistencia, valores por defecto, migraciones, copia de seguridad (JSON) y exportación CSV.
+ * Los datos se guardan en IndexedDB (sin el límite de ~5 MB de localStorage). Mientras ocupan poco
+ * (≤ MIRROR_MAX) también se deja una copia en localStorage por compatibilidad. `Store.ready` se cumple
+ * cuando IndexedDB ya se leyó: la app llama a `load()` después (ver app/init.js).
  * ========================================================================= */
 (function (root) {
   'use strict';
@@ -186,23 +188,77 @@
 
   /** Toma `state` como referencia sin marcar cambios (al cargar o al recibir datos sincronizados). */
   function adopt(state) {
+    flush();   // lo pendiente del estado anterior se escribe primero (y queda marcado)
     baseline = stamp(state, null);
     return writeRaw(state);
   }
 
+  // ---------- IndexedDB (almacenamiento principal) ----------
+  var DB_NAME = 'misFinanzasDatos', DB_STORE = 'kv';
+  var MIRROR_MAX = 1500000;          // caracteres (~3 MB en localStorage): por encima solo se guarda en IndexedDB
+  var AT_KEY = KEY + '.at';          // marca de la última copia en localStorage (para detectar cambios de una versión vieja)
+  var idb = null, idbRec = null, lastLen = 0, putting = false, pendingPut = null;
+  var source = 'nuevo';              // de dónde se cargaron los datos: indexeddb | localStorage | nuevo
+  function idbReq(r) { return new Promise(function (res, rej) { r.onsuccess = function () { res(r.result); }; r.onerror = function () { rej(r.error); }; }); }
+  function idbOpen() {
+    return new Promise(function (res, rej) {
+      if (!root.indexedDB) { rej(new Error('Sin IndexedDB')); return; }
+      var r = root.indexedDB.open(DB_NAME, 1);
+      r.onupgradeneeded = function () { r.result.createObjectStore(DB_STORE); };
+      r.onsuccess = function () { res(r.result); };
+      r.onerror = function () { rej(r.error); };
+      r.onblocked = function () { rej(new Error('IndexedDB bloqueado')); };
+    });
+  }
+  // Se lee al cargar el archivo; si IndexedDB no responde en 1,5 s se sigue con localStorage
+  var ready = Promise.race([
+    idbOpen().then(function (db) { return idbReq(db.transaction(DB_STORE).objectStore(DB_STORE).get(KEY)).then(function (rec) { idb = db; idbRec = rec || null; }); })
+      .catch(function () { idb = null; }),
+    new Promise(function (res) { setTimeout(res, 1500); })
+  ]);
+  /** Escribe en IndexedDB sin bloquear: si ya hay una escritura en curso, solo se guarda la última. */
+  function idbPut(rec) {
+    pendingPut = rec;
+    if (putting || !idb) return;
+    putting = true;
+    var next = pendingPut; pendingPut = null;
+    var tx = idb.transaction(DB_STORE, 'readwrite');
+    tx.objectStore(DB_STORE).put(next, KEY);
+    var done = function () { putting = false; if (pendingPut) idbPut(pendingPut); };
+    tx.oncomplete = done;
+    tx.onerror = tx.onabort = function () { done(); try { root.localStorage.setItem(KEY, next.data); } catch (e) { /* sin espacio */ } };
+  }
+
   function writeRaw(state) {
-    try {
-      root.localStorage.setItem(KEY, JSON.stringify(state));
-      return true;
-    } catch (e) {
-      root.alert('No se pudo guardar (almacenamiento lleno o bloqueado). Exporta una copia de seguridad.');
-      return false;
+    var json = JSON.stringify(state), at = Date.now(), lsOk = false;
+    lastLen = json.length;
+    if (!idb || json.length <= MIRROR_MAX) {
+      try { root.localStorage.setItem(KEY, json); root.localStorage.setItem(AT_KEY, String(at)); lsOk = true; } catch (e) { lsOk = false; }
     }
+    if (idb) {
+      // Grande (o sin espacio en localStorage): solo IndexedDB; se quita la copia vieja para que no quede desactualizada
+      if (!lsOk) { try { root.localStorage.removeItem(KEY); root.localStorage.removeItem(AT_KEY); } catch (e) { /* nada */ } }
+      idbPut({ data: json, at: at });
+      return true;
+    }
+    if (!lsOk) root.alert('No se pudo guardar (almacenamiento lleno o bloqueado). Exporta una copia de seguridad.');
+    return lsOk;
+  }
+
+  /** Datos guardados: IndexedDB; localStorage si no hay nada allí (o si una versión vieja de la app lo cambió después). */
+  function pickRaw() {
+    var ls = null, lsAt = null;
+    try { ls = root.localStorage.getItem(KEY); lsAt = root.localStorage.getItem(AT_KEY); } catch (e) { ls = null; }
+    var dbRaw = idbRec && idbRec.data;
+    if (dbRaw && ls && ls !== dbRaw && lsAt === String(idbRec.at)) { source = 'localStorage'; return ls; }   // editado por una versión sin IndexedDB
+    if (dbRaw) { source = 'indexeddb'; return dbRaw; }
+    if (ls) { source = 'localStorage'; return ls; }
+    source = 'nuevo'; return null;
   }
 
   function load() {
-    var raw, state;
-    try { raw = root.localStorage.getItem(KEY); } catch (e) { raw = null; }
+    var raw = pickRaw(), state;
+    lastLen = raw ? raw.length : 0;
     if (!raw) state = defaults();
     else {
       try {
@@ -215,18 +271,58 @@
       }
     }
     baseline = stamp(state, null);
+    // Primera vez con IndexedDB: los datos de localStorage pasan allí
+    if (idb && source !== 'indexeddb' && raw) writeRaw(state);
     return state;
   }
 
+  /** Cuánto ocupan los datos y dónde están (para Ajustes). */
+  function info() {
+    var lsChars = 0;
+    try { for (var i = 0; i < root.localStorage.length; i++) { var k = root.localStorage.key(i); lsChars += k.length + (root.localStorage.getItem(k) || '').length; } } catch (e) { /* nada */ }
+    var out = { dataChars: lastLen, indexedDB: !!idb, mirror: !idb || lastLen <= MIRROR_MAX, mirrorMax: MIRROR_MAX, lsChars: lsChars, source: source };
+    var nav = root.navigator && root.navigator.storage;
+    if (!nav || !nav.estimate) return Promise.resolve(out);
+    return Promise.all([nav.estimate(), nav.persisted ? nav.persisted() : Promise.resolve(null)]).then(function (r) {
+      out.usage = r[0].usage; out.quota = r[0].quota; out.details = r[0].usageDetails || null; out.persisted = r[1];
+      return out;
+    }).catch(function () { return out; });
+  }
+  /** Pide al navegador no borrar los datos de la app cuando le falte espacio. */
+  function persistStorage() {
+    var nav = root.navigator && root.navigator.storage;
+    return nav && nav.persist ? nav.persist() : Promise.resolve(false);
+  }
+
   /** Guarda y marca lo que cambió desde el último guardado. */
-  function save(state) {
-    baseline = stamp(state, baseline);
-    var ok = writeRaw(state);
+  // Para que la pantalla responda antes, el marcado y la escritura se hacen justo después (setTimeout 0);
+  // varios guardados seguidos se juntan en uno. `flush()` lo adelanta (antes de sincronizar o al cerrar la app).
+  var saveTimer = null, saveState = null;
+  function flush() {
+    if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+    var st = saveState;
+    if (!st) return true;
+    saveState = null;
+    baseline = stamp(st, baseline);
+    var ok = writeRaw(st);
     if (ok && root.Store.onSave) root.Store.onSave();
     return ok;
   }
+  function save(state) {
+    saveState = state;
+    if (!saveTimer) saveTimer = setTimeout(flush, 0);
+    return true;
+  }
+  if (root.addEventListener) {
+    root.addEventListener('pagehide', flush);
+    root.document && root.document.addEventListener('visibilitychange', function () { if (root.document.visibilityState === 'hidden') flush(); });
+  }
 
-  function clear() { root.localStorage.removeItem(KEY); }
+  function clear() {
+    saveState = null; if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+    try { root.localStorage.removeItem(KEY); root.localStorage.removeItem(AT_KEY); } catch (e) { /* nada */ }
+    if (idb) { pendingPut = null; idb.transaction(DB_STORE, 'readwrite').objectStore(DB_STORE).delete(KEY); }
+  }
 
   // ---------- Archivos ----------
 
@@ -255,6 +351,7 @@
   root.Store = {
     KEY: KEY, ACCOUNT_KINDS: ACCOUNT_KINDS, COLLECTIONS: COLLECTIONS, uid: uid, today: today, defaults: defaults,
     normalize: normalize, load: load, save: save, adopt: adopt, stamp: stamp, touchAll: touchAll, clear: clear, toCSV: toCSV, download: download,
+    ready: ready, info: info, flush: flush, persistStorage: persistStorage, MIRROR_MAX: MIRROR_MAX,
     onSave: null   // la sincronización se engancha aquí
   };
 })(this);
