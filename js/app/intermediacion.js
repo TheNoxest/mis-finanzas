@@ -227,8 +227,8 @@ function renderBrokerPayments() {
   if (pf.dataset.debt !== key) {
     pf.dataset.debt = key;
     pf.amount.value = lg.pending; pf.date.value = S.today(); pf.note.value = '';
-    fillSelect(pf.accountId, brAccounts(lg.currency, lg.currency === bk.payCurrency && lg.currency !== bk.asset).map(function (o, i) { return i ? o : { value: '', label: 'Sin cuenta' }; }), lg.accountId || '');
-    pf.dataset.cur = lg.currency; mixReset(payMix);
+    fillSelect(pf.accountId, payAccountsAll(lg.currency, 'Sin cuenta'), lg.accountId || '');
+    pf.dataset.cur = lg.currency; mixReset(payMix); pf.accAmount.value = ''; delete pf.dataset.convTouched;
   }
 }
 function brokerPay(f) {
@@ -240,10 +240,12 @@ function brokerPay(f) {
   if (!f.date.value) { toast('Elige la fecha'); return; }
   var tg = payTarget(f);
   if (tg.error) { toast(tg.error); return; }
+  var cv = payConv(f);
+  if (cv && cv.error) { toast(cv.error); f.accAmount.focus(); return; }
   bk.legs = bk.legs || {};
   var leg = bk.legs[lg.role] = bk.legs[lg.role] || { accountId: tg.accountId, payments: [] };
   var nid = S.uid();
-  leg.payments = (leg.payments || []).concat([withSplits({ id: nid, date: f.date.value, amount: C.round(amt, 2), accountId: tg.accountId, note: f.note.value.trim(), createdAt: Date.now() }, tg)]);
+  leg.payments = (leg.payments || []).concat([applyConv(withSplits({ id: nid, date: f.date.value, amount: C.round(amt, 2), accountId: tg.accountId, note: f.note.value.trim(), createdAt: Date.now() }, tg), cv)]);
   invalidateSnapshots(f.date.value);
   f.dataset.debt = '';
   var ns = C.brokerStatus(bk), nl = brLegOf(ns, lg.role);

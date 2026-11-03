@@ -352,6 +352,19 @@
     eq('Sin bloqueo activado o sin haber salido: no bloquea', [LK.shouldLock({ enabled: false, after: 0 }, 1, 9e9), LK.shouldLock({ enabled: true, after: 0 }, null, 9e9)], [false, false]);
     eq('Espera tras fallos: 4 → 0 s, 5 → 30 s, 6 → 60 s, 10 → 15 min (tope)', [LK.lockoutMs(4), LK.lockoutMs(5), LK.lockoutMs(6), LK.lockoutMs(10)], [0, 30000, 60000, 900000]);
 
+    section('Deuda pagada por partes en distintas cuentas y monedas');
+    var dvS = { settings: { baseCurrency: 'USD', rates: { USD: 1, USDT: 1, VES: 0.0025 } },
+      accounts: [{ id: 'Z', name: 'Zelle', currency: 'USD', initialBalance: 0 }, { id: 'BN', name: 'Binance', currency: 'USDT', initialBalance: 0 }, { id: 'BS', name: 'Banco Bs', currency: 'VES', initialBalance: 0 }],
+      transactions: [], investments: [], exchanges: [], sales: [], loans: [], brokerages: [],
+      debts: [{ id: 'dv', kind: 'pagar', person: 'Carlos', amount: 100, currency: 'USD', date: '2026-10-01', payments: [
+        { id: 'v1', date: '2026-10-05', amount: 50, accountId: 'Z' }, { id: 'v2', date: '2026-10-06', amount: 20, accountId: 'BN' },
+        { id: 'v3', date: '2026-10-07', amount: 30, accountId: 'BS', accAmount: 10950, accCurrency: 'VES' }] }] };
+    var dvB = {}; C.accountBalances(dvS).forEach(function (a) { dvB[a.account.id] = a.balance; });
+    eq('Debía 100 USD: pagó 50 de Zelle, 20 de Binance (USDT) y 30 en Bs (10.950 Bs)', dvB, { Z: -50, BN: -20, BS: -10950 });
+    eq('La deuda queda saldada (50 + 20 + 30 = 100 USD)', C.debtBalance(dvS.debts[0]).status, 'pagada');
+    var dvI = C.ledgerIssues(C.ledger(dvS), dvS, '2026-10-20');
+    eq('Ningún abono se marca como «moneda distinta»', Object.keys(dvI).filter(function (k) { return dvI[k].indexOf('moneda') >= 0; }), []);
+
     section('Historial de cobros y pagos');
     var pr0 = C.paymentRows(C.ledger(lnS0()), false), pr1 = C.paymentRows(C.ledger(lnS0()), true);
     function lnS0() {

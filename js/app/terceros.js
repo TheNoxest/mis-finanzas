@@ -191,8 +191,8 @@ function renderFxPayments() {
   if (pf.dataset.debt !== 'fx:' + x.id) {
     pf.dataset.debt = 'fx:' + x.id;
     pf.amount.value = st.pending; pf.date.value = S.today(); pf.note.value = '';
-    fillSelect(pf.accountId, accountsFor(cur, 'Sin cuenta'), (c ? x.inAccountId : x.outAccountId) || '');
-    pf.dataset.cur = cur; mixReset(payMix);
+    fillSelect(pf.accountId, payAccountsAll(cur, 'Sin cuenta'), (c ? x.inAccountId : x.outAccountId) || '');
+    pf.dataset.cur = cur; mixReset(payMix); pf.accAmount.value = ''; delete pf.dataset.convTouched;
   }
 }
 /** Registra un cobro (o entrega) del cambio; si queda saldado, el cambio pasa a «completado». */
@@ -205,9 +205,11 @@ function settleFx(f) {
   if (!f.date.value) { toast('Elige la fecha'); return; }
   var tg = payTarget(f);
   if (tg.error) { toast(tg.error); return; }
+  var cv = payConv(f);
+  if (cv && cv.error) { toast(cv.error); f.accAmount.focus(); return; }
   x.settleSide = st.side;
   var nid = S.uid();
-  x.settlements = (x.settlements || []).concat([withSplits({ id: nid, date: f.date.value, amount: C.round(amt, 2), accountId: tg.accountId, note: f.note.value.trim(), createdAt: Date.now() }, tg)]);
+  x.settlements = (x.settlements || []).concat([applyConv(withSplits({ id: nid, date: f.date.value, amount: C.round(amt, 2), accountId: tg.accountId, note: f.note.value.trim(), createdAt: Date.now() }, tg), cv)]);
   var ns = C.exchangeSettlement(x);
   if (ns.status === 'pagada') x.status = 'completada';
   invalidateSnapshots(f.date.value);
@@ -236,8 +238,7 @@ function setPayEdit(action, id, label) {
 }
 function renderDebtPayments() {
   setPayEdit(null); setPayTools(null);
-  delete $('#pay-form').dataset.conv; $('#pay-conv').classList.add('hidden');
-  if (payFx) { renderFxPayments(); return; }
+  if (payFx) { renderFxPayments(); syncPayConv(); return; }
   if (payRef) { renderRefPayments(); syncPayConv(); return; }
   if (accTab !== 'cobrar' && accTab !== 'pagar') { $('#debt-payments').classList.add('hidden'); return; }
   var f = $('#debt-form'), card = $('#debt-payments');
@@ -264,9 +265,10 @@ function renderDebtPayments() {
   if (pf.dataset.debt !== d.id) {
     pf.dataset.debt = d.id;
     pf.amount.value = bal.pending; pf.date.value = S.today(); pf.note.value = '';
-    fillSelect(pf.accountId, accountsFor(d.currency, 'Sin cuenta'), d.accountId || '');
-    pf.dataset.cur = d.currency; mixReset(payMix);
+    fillSelect(pf.accountId, payAccountsAll(d.currency, 'Sin cuenta'), d.accountId || '');
+    pf.dataset.cur = d.currency; mixReset(payMix); pf.accAmount.value = ''; delete pf.dataset.convTouched;
   }
+  syncPayConv();
 }
 
 function onDebtSubmit(e) {
@@ -310,8 +312,10 @@ function onPaySubmit(e) {
   d.payments = d.payments || [];
   var tg = payTarget(f);
   if (tg.error) { toast(tg.error); return; }
+  var cv = payConv(f);
+  if (cv && cv.error) { toast(cv.error); f.accAmount.focus(); return; }
   var nid = S.uid();
-  d.payments.push(withSplits({ id: nid, date: f.date.value, amount: C.round(amt, 2), accountId: tg.accountId, note: f.note.value.trim(), createdAt: Date.now() }, tg));
+  d.payments.push(applyConv(withSplits({ id: nid, date: f.date.value, amount: C.round(amt, 2), accountId: tg.accountId, note: f.note.value.trim(), createdAt: Date.now() }, tg), cv));
   invalidateSnapshots(f.date.value);
   f.dataset.debt = '';
   var nb = C.debtBalance(d);

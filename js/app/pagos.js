@@ -94,7 +94,6 @@ function payLookup(kind, id, pay) {
     if (!lg || !rec.legs || !rec.legs[role]) return null;
     holder = rec.legs[role]; field = 'payments'; pay = pid;
     total = lg.total; cur = lg.currency; inn = lg.dir === 'in'; who = lg.person; title = brLegTitle(lg).replace(/<[^>]+>/g, '');
-    accs = brAccounts(cur, cur === rec.payCurrency && cur !== rec.asset).map(function (o, i) { return i ? o : { value: '', label: 'Sin cuenta' }; });
   } else if (kind === 'fx') {
     rec = byId(state.exchanges, id); var st = rec && C.exchangeSettlement(rec); if (!st) return null;
     holder = rec; field = 'settlements'; total = st.total; cur = st.currency; inn = st.side === 'in'; who = rec.client;
@@ -105,16 +104,16 @@ function payLookup(kind, id, pay) {
     title = 'Cobro de la venta' + (rec.client ? ' a ' + rec.client : '');
   } else if (kind === 'loan') {
     rec = byId(state.loans, id); if (!rec) return null;
-    holder = rec; field = 'payments'; total = C.loanStatus(rec, S.today()).total; cur = rec.currency; inn = rec.kind !== 'recibido'; who = rec.person; conv = true;
+    holder = rec; field = 'payments'; total = C.loanStatus(rec, S.today()).total; cur = rec.currency; inn = rec.kind !== 'recibido'; who = rec.person;
     title = (inn ? 'Pago recibido de ' : 'Pago a ') + (rec.person || '');
-    accs = payAccountsAll(cur, 'Sin cuenta');
   } else if (kind === 'debt') {
     rec = byId(state.debts, id); if (!rec) return null;
     holder = rec; field = 'payments'; total = Number(rec.amount); cur = rec.currency; inn = rec.kind === 'cobrar'; who = rec.person;
     title = (inn ? 'Abono recibido de ' : 'Abono a ') + (rec.person || '');
   } else return null;
   var pm = byId(holder[field] || [], pay); if (!pm) return null;
-  if (!accs) accs = [{ value: '', label: 'Sin cuenta' }].concat(state.accounts.filter(function (a) { return C.samePeg(a.currency, cur); }).map(function (a) { return { value: a.id, label: a.name + (a.currency !== cur ? ' · ' + a.currency : '') }; }));
+  accs = payAccountsAll(cur, 'Sin cuenta');   // cualquier cuenta: si es de otra moneda se pide lo que se movió en ella
+  conv = true;
   var others = C.sum((holder[field] || []).filter(function (x) { return x !== pm; }).map(function (x) { return x.amount; }));
   return { kind: kind, rec: rec, holder: holder, field: field, pm: pm, total: total, max: C.round(total - others, 2), cur: cur, inn: inn, who: who || '', title: title, accs: accs, conv: conv };
 }

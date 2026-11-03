@@ -177,7 +177,6 @@
       var stA = C.loanStatus(upTo(parent, 'payments', pm), ctx && ctx.today);
       rows.push(row('Préstamo del', dateTxt(parent.date) + ' · ' + money(parent.principal, cur, L)));
       rows.push(row('Monto pagado', money(pm.amount, cur, L), true));
-      if (Number(pm.accAmount) > 0 && pm.accCurrency) rows.push(row('Pagado en ' + pm.accCurrency, money(pm.accAmount, pm.accCurrency, L) + ' (1 ' + cur + ' = ' + numTxt(pm.accAmount / pm.amount, L, 4) + ' ' + pm.accCurrency + ')'));
       if (split && split.interest > 0) rows.push(row('A intereses', money(split.interest, cur, L)));
       if (split) rows.push(row('A capital', money(split.capital, cur, L)));
       rows.push(row('Saldo pendiente', money(stA.pending, cur, L)));
@@ -224,6 +223,8 @@
       rows.push(row('Saldo pendiente', money(after, cur, L)));
     }
     var m = base(ctx, { kind: 'pago', title: title, number: number('REC', pm.date, pm.id), date: pm.date, partyLabel: partyLabel, party: party });
+    // Pagado desde una cuenta en otra moneda: cuánto se movió de verdad (antes del saldo pendiente)
+    if (Number(pm.accAmount) > 0 && pm.accCurrency) rows.splice(Math.max(0, rows.length - 1), 0, row('Pagado en ' + pm.accCurrency, money(pm.accAmount, pm.accCurrency, L) + ' (1 ' + cur + ' = ' + numTxt(pm.accAmount / pm.amount, L, 4) + ' ' + pm.accCurrency + ')'));
     m.rows = rows;
     m.status = after > 0 ? 'Queda pendiente ' + money(after, cur, L) : 'Saldado';
     m.note = pm.note || '';

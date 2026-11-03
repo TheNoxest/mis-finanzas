@@ -116,13 +116,13 @@ function payTarget(f) {
 function withSplits(obj, t) { if (t.splits) obj.splits = t.splits; return obj; }
 
 /**
- * Pago desde una cuenta en otra moneda (préstamos): si la cuenta elegida no vale lo mismo que la moneda del préstamo
+ * Pago desde una cuenta en otra moneda (préstamos, deudas, ventas, cambios, intermediaciones): si la cuenta elegida no vale lo mismo que la moneda del préstamo
  * (p. ej. préstamo en USD cobrado en Bs), aparece «Monto en VES», propuesto con la tasa actual y editable.
  */
 function syncPayConv(changed) {
   var pf = $('#pay-form'), box = $('#pay-conv'), cur = pf.dataset.cur, a = account(pf.accountId.value);
   var mixed = !!$('#pay-form .mix-panel:not(.hidden)');
-  var show = !!(pf.dataset.conv && a && cur && !C.samePeg(a.currency, cur) && !mixed);
+  var show = !!(a && cur && !C.samePeg(a.currency, cur) && !mixed);
   box.classList.toggle('hidden', !show);
   if (!show) { delete pf.dataset.convTouched; pf.accAmount.value = ''; return; }
   if (changed === 'account') delete pf.dataset.convTouched;
@@ -130,9 +130,11 @@ function syncPayConv(changed) {
   var amt = num(pf.amount.value);
   if (!pf.dataset.convTouched) { var v = C.convert(amt, cur, a.currency, rates()); pf.accAmount.value = v > 0 ? C.round(v, 2) : ''; }
   var acc = num(pf.accAmount.value);
-  $('#pay-conv-hint').textContent = amt > 0 && acc > 0 ? 'Tasa: 1 ' + cur + ' = ' + fmtNum(acc / amt, 0, 4) + ' ' + a.currency + '. Al préstamo se abonan ' + fmtMoney(amt, cur) + '.'
+  $('#pay-conv-hint').textContent = amt > 0 && acc > 0 ? 'Tasa: 1 ' + cur + ' = ' + fmtNum(acc / amt, 0, 4) + ' ' + a.currency + '. Se abonan ' + fmtMoney(amt, cur) + ' a lo que se debe.'
     : 'Escribe cuánto entró o salió en ' + a.currency + '.';
 }
+/** Guarda en el pago lo que se movió en la cuenta (si es de otra moneda). cv = payConv(f), ya validado. */
+function applyConv(obj, cv) { if (cv) { obj.accAmount = cv.accAmount; obj.accCurrency = cv.accCurrency; } return obj; }
 /** Monto convertido del pago (o null si la cuenta es de la misma moneda). */
 function payConv(f) {
   if ($('#pay-conv').classList.contains('hidden')) return null;

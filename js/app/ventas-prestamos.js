@@ -84,10 +84,9 @@ function renderRefPayments() {
   if (pf.dataset.debt !== payRef.kind + ':' + rec.id) {
     pf.dataset.debt = payRef.kind + ':' + rec.id;
     pf.amount.value = !sale && st.next ? st.next.amount : st.pending; pf.date.value = today; pf.note.value = '';
-    fillSelect(pf.accountId, sale ? accountsFor(cur, 'Sin cuenta') : payAccountsAll(cur, 'Sin cuenta'), (sale ? state.settings.last.saleAccountId : rec.accountId) || '');
+    fillSelect(pf.accountId, payAccountsAll(cur, 'Sin cuenta'), (sale ? state.settings.last.saleAccountId : rec.accountId) || '');
     pf.dataset.cur = cur; mixReset(payMix); pf.accAmount.value = ''; delete pf.dataset.convTouched;
   }
-  if (!sale) pf.dataset.conv = '1';
 }
 function refPay(f) {
   if (payRef.kind === 'broker') { brokerPay(f); return; }
@@ -100,7 +99,7 @@ function refPay(f) {
   if (!f.date.value) { toast('Elige la fecha'); return; }
   var tg = payTarget(f);
   if (tg.error) { toast(tg.error); return; }
-  var cv = sale ? null : payConv(f);
+  var cv = payConv(f);
   if (cv && cv.error) { toast(cv.error); f.accAmount.focus(); return; }
   var nid = S.uid(), npm = withSplits({ id: nid, date: f.date.value, amount: C.round(amt, 2), accountId: tg.accountId, note: f.note.value.trim(), createdAt: Date.now() }, tg);
   if (cv) { npm.accAmount = cv.accAmount; npm.accCurrency = cv.accCurrency; }
