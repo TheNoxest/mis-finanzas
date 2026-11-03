@@ -57,6 +57,20 @@ var LG_ISSUE = { duplicado: 'Posible duplicado', sin_cuenta: 'No mueve ninguna c
 var LG_STATUS = { falta_cobrar: ['warn', 'Falta cobrar'], falta_entregar: ['warn', 'Falta entregar'], por_cobrar: ['warn', 'Por cobrar'],
   cobrada: ['ok', 'Cobrada'], contado: ['ok-soft', 'Contado'], activo: ['', 'Activo'], pagado: ['ok', 'Pagado'], pendiente: ['warn', 'Pendiente'], saldada: ['ok', 'Saldada'] };
 var lgLimit = 200;
+// Botones rápidos del historial: un solo historial con filtros (internamente, los 3 modos de siempre)
+var HCHIP = { todo: ['all', ''], tx: ['tx', ''], pay: ['pay', ''], transfer: ['all', 'transferencia'], cambio: ['all', 'cambio'] };
+function setHistChip(k, noRender) {
+  var c = HCHIP[k] || HCHIP.todo;
+  $('#hs-' + c[0]).checked = true;
+  if (c[0] === 'all') $('#lg-group').value = c[1];
+  setUiPref('histScope', c[0]); setUiPref('histChip', HCHIP[k] ? k : 'todo');
+  lgLimit = 200;
+  if (!noRender) renderTxList();
+}
+function currentHistChip() {
+  var sc = histScope(), g = $('#lg-group').value;
+  return sc === 'tx' ? 'tx' : sc === 'pay' ? 'pay' : g === 'transferencia' ? 'transfer' : g === 'cambio' ? 'cambio' : 'todo';
+}
 function histScope() { var r = document.querySelector('input[name="hist-scope"]:checked'); return r ? r.value : 'tx'; }
 function lgConcept(r) {
   var e = r.extra || {};
@@ -149,7 +163,8 @@ function exportLedgerCSV() {
 }
 
 function renderTxList() {
-  var sc = histScope(), all = sc === 'all', pay = sc === 'pay';
+  var sc = histScope(), all = sc === 'all', pay = sc === 'pay', chip = currentHistChip();
+  $$('#hist-chips [data-hchip]').forEach(function (b) { b.setAttribute('aria-checked', b.dataset.hchip === chip ? 'true' : 'false'); });
   $('#hist-all').classList.toggle('hidden', !all);
   $('#hist-pay').classList.toggle('hidden', !pay);
   $('#hist-tx').classList.toggle('hidden', all || pay);

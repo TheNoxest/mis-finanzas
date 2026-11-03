@@ -122,7 +122,7 @@ function bind() {
   ['#f-month', '#f-type', '#f-account'].forEach(function (s) { $(s).addEventListener('change', renderTxList); });
   // Historial completo: alcance, filtros y orden
   $$('input[name="hist-scope"]').forEach(function (r) { r.addEventListener('change', function () { setUiPref('histScope', r.value); lgLimit = 200; renderTxList(); }); });
-  ['#lg-month', '#lg-group', '#lg-account', '#lg-sort', '#lg-issues'].forEach(function (sel) { $(sel).addEventListener('change', function () { lgLimit = 200; renderLedger(); }); });
+  ['#lg-month', '#lg-group', '#lg-account', '#lg-sort', '#lg-issues'].forEach(function (sel) { $(sel).addEventListener('change', function () { lgLimit = 200; renderTxList(); }); });
   var lgT;
   $('#lg-q').addEventListener('input', function () { clearTimeout(lgT); lgT = setTimeout(function () { lgLimit = 200; renderLedger(); }, 150); });
 

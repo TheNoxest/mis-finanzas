@@ -369,6 +369,15 @@ dialog::backdrop { background: rgba(0, 0, 0, .35); }
 .q-ops button { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 7px 2px; font-size: .72rem; min-height: 54px; }
 .q-ops .ic { width: 18px; height: 18px; }
 #agenda-list .amt { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.hist-chips { margin: 6px 0 8px; }
+.a-tabs { margin: 0 0 12px; }
+.settings-index { margin: 0 0 8px; }
+.settings-group { margin: 22px 4px 8px; font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); scroll-margin-top: 70px; }
+#view-analisis .card[data-atab] { display: none; }
+#view-analisis[data-atab="resumen"] .card[data-atab="resumen"], #view-analisis[data-atab="dia"] .card[data-atab="dia"],
+#view-analisis[data-atab="categorias"] .card[data-atab="categorias"], #view-analisis[data-atab="evolucion"] .card[data-atab="evolucion"],
+#view-analisis[data-atab="proyeccion"] .card[data-atab="proyeccion"], #view-analisis[data-atab="impuestos"] .card[data-atab="impuestos"] { display: block; }
+.hist-hint { margin: 4px 0 8px; }
 /* Bloqueo de la app */
 .lock-screen { display: none; }
 html.locked body > *:not(#lock-screen) { visibility: hidden !important; }

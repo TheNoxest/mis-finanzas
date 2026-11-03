@@ -71,6 +71,13 @@ function analysisRange() {
   return { from: monthsAgo(5), to: today, back: 6 }; // 6m por defecto
 }
 
+/** Pestañas de Análisis: solo se ve la elegida (se recuerda en este dispositivo). */
+function setAnalysisTab(t) {
+  var v = $('#view-analisis');
+  if (!$('#a-tabs [data-atab-btn="' + t + '"]')) t = 'resumen';
+  v.dataset.atab = t; setUiPref('aTab', t);
+  $$('#a-tabs [data-atab-btn]').forEach(function (b) { b.setAttribute('aria-checked', b.dataset.atabBtn === t ? 'true' : 'false'); });
+}
 function renderAnalysis() {
   if (!$('#view-analisis').classList.contains('active')) return;
   var b = base();

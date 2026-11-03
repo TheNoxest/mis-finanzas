@@ -105,6 +105,9 @@ document.addEventListener('click', function (e) {
     return;
   }
   if (b.dataset.quick) { quickGo(b.dataset.quick); return; }
+  if (b.dataset.hchip) { setHistChip(b.dataset.hchip); return; }
+  if (b.dataset.scrollTo) { var t = document.getElementById(b.dataset.scrollTo); if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
+  if (b.dataset.atabBtn) { setAnalysisTab(b.dataset.atabBtn); window.scrollTo(0, 0); setTimeout(renderAnalysis, 0); return; }   // los gráficos necesitan el ancho visible
   if (FG_CANCEL[b.dataset.action]) fgClose(FG_CANCEL[b.dataset.action]);
 });
 
