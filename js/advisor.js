@@ -231,7 +231,7 @@
           data: 'Valor ' + top.position.ticker + ' ' + fmt(top.valueBase) + ' ÷ portafolio ' + fmt(pf.value) + ' = ' + pct(top.weight) + '. ' + pf.rows.length + ' activo(s) en total.' });
       }
       var topType = pf.byType.slice().sort(function (a, b) { return b.weight - a.weight; })[0];
-      var LABEL = { accion: 'acciones', etf: 'ETF', cripto: 'cripto', divisa: 'divisas', otro: 'otros activos' };
+      var LABEL = { accion: 'acciones', etf: 'ETF', cripto: 'cripto', materia: 'materias primas', divisa: 'divisas', otro: 'otros activos' };
       if (pf.byType.length > 0 && topType.weight > 70 && pf.rows.length > 1) {
         add({ id: 'concentracion-tipo', severity: 'baja', area: 'Diversificación',
           title: 'El ' + pct(topType.weight) + ' de tu portafolio está en ' + LABEL[topType.assetType],

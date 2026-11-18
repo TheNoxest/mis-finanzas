@@ -25,6 +25,7 @@
   <script src="../js/insights.js"></script>
   <script src="../js/receipt.js"></script>
   <script src="../js/lock.js"></script>
+  <script src="../js/prices.js"></script>
   <script>
   (function () {
     var out = document.getElementById('out'), pass = 0, fail = 0, ol;
@@ -329,6 +330,17 @@
     eq('Custodia: BTC pagado desde el banco y guardado en Efectivo', [C.accountHoldings(moved, 'A').portfolio.value, C.accountHoldings(moved, 'B').portfolio.value], [1800, 3500]);
     eq('El saldo del banco no cambia por la custodia (se pagó desde ahí)', C.accountHoldings(moved, 'A').cash, 6212);
     eq('Suma de cuentas + activos = patrimonio sin terceros', C.round(['A', 'B', 'C', 'D'].reduce(function (s, id) { return s + C.accountHoldings(state, id).total; }, 0)), nw.total);
+
+    section('Materias primas (oro, petróleo…)');
+    var MK = window.Market;
+    eq('8 materias primas: oro, plata, platino, paladio, cobre, WTI, Brent y gas', MK.COMMODITIES.map(function (c) { return c.ticker; }), ['XAU', 'XAG', 'XPT', 'XPD', 'XCU', 'CL', 'BZ', 'NG']);
+    eq('Buscar «oro» o «gold» → XAU; «petróleo» (con o sin tilde) → WTI y Brent; «cob» → cobre',
+      [MK.commodityMatch('oro').map(function (c) { return c.ticker; }), MK.commodityMatch('gold').map(function (c) { return c.ticker; }),
+       MK.commodityMatch('petróleo').map(function (c) { return c.ticker; }), MK.commodityMatch('PETROLEO').map(function (c) { return c.ticker; }), MK.commodityMatch('cob').map(function (c) { return c.ticker; })],
+      [['XAU'], ['XAU'], ['CL', 'BZ'], ['CL', 'BZ'], ['XCU']]);
+    eq('Ficha: XAU = Oro por onza troy; desconocido → null', [MK.commodity('xau').name, MK.commodity('xau').unit, MK.commodity('ZZZ')], ['Oro', 'onza troy', null]);
+    var okq = Prices.parseOkx({ last: '3815.1', open24h: '3867.3', ts: '1794966859667' });
+    eq('Precio de OKX: 3.815,10 USD; cambio 24 h = (3815,1 − 3867,3) ÷ 3867,3 = −1,35 %', [okq.price, okq.change24h, okq.currency, okq.source], [3815.1, -1.35, 'USD', 'OKX']);
 
     section('«Para hoy» en Inicio');
     var agTp = { receivables: [

@@ -27,7 +27,7 @@ function assetBadge(p) {
     : '<span class="asset-badge" style="--type-color:' + ASSET_COLORS[p.assetType] + '">' + esc(p.ticker.slice(0, 4)) + '</span>';
 }
 function quoteCurrency(type, ticker) {
-  if (type === 'cripto' || type === 'accion' || type === 'etf') return 'USD';
+  if (type === 'cripto' || type === 'accion' || type === 'etf' || type === 'materia') return 'USD';
   if (type === 'divisa') return base();
   var op = state.investments.filter(function (o) { return o.assetType === type && o.ticker === ticker; })[0];
   return op ? op.currency : base();
@@ -42,7 +42,7 @@ function openAsset(type, ticker) {
   var q = state.prices[C.priceKey(type, ticker)];
   asset = {
     type: type, ticker: ticker, quoteCur: quoteCurrency(type, ticker), hasOps: ops.length > 0,
-    range: ops.length ? 'mis' : (type === 'cripto' ? '1M' : 'mis'), points: [], loadId: 0,
+    range: ops.length ? 'mis' : (type === 'cripto' || type === 'materia' ? '1M' : 'mis'), points: [], loadId: 0,
     price: q && q.price != null ? q.price : null, change24h: q ? q.change24h : null, priceTime: q ? (q.lastAttempt || q.time) : null,
     status: 'connecting', chart: null, lastChart: 0
   };
@@ -79,6 +79,7 @@ async function loadAssetMeta() {
   var m;
   if (a.type === 'cripto') m = await Market.fetchCryptoMeta(a.ticker);
   else if (a.type === 'accion' || a.type === 'etf') m = await Market.fetchStockMeta(a.ticker, state.settings.finnhubKey);
+  else if (a.type === 'materia') { var mc = Market.commodity(a.ticker); m = { name: mc ? mc.name : a.ticker, exchange: mc ? 'por ' + mc.unit : '' }; }
   else m = { name: a.type === 'divisa' ? 'Divisa ' + a.ticker : a.ticker };
   state.assetMeta[key] = Object.assign({}, m, { at: Date.now() });
   S.save(state);
@@ -92,7 +93,7 @@ function renderAssetHeader() {
     ? '<img src="' + esc(m.logo) + '" alt="" onerror="this.parentNode.textContent=\'' + esc(a.ticker.slice(0, 4)) + '\'">'
     : esc(a.ticker.slice(0, 4));
   $('#ad-name').textContent = m.name && m.name.toUpperCase() !== a.ticker ? m.name : a.ticker;
-  $('#ad-sub').textContent = a.ticker + (a.type === 'cripto' ? '/USDT · Binance' : '') + ' · ' + ASSET_LABELS[a.type] + (m.exchange ? ' · ' + m.exchange : '');
+  $('#ad-sub').textContent = a.ticker + (a.type === 'cripto' ? '/USDT · Binance' : a.type === 'materia' ? ' · OKX' : '') + ' · ' + ASSET_LABELS[a.type] + (m.exchange ? ' · ' + m.exchange : '');
   renderAssetPrice(null);
 }
 
@@ -111,8 +112,8 @@ function renderAssetPrice(prev) {
     ? '<span class="' + trend(a.change24h) + '">' + fmtPct(a.change24h) + '</span> <span class="muted small">24 h</span>' : '';
   var st = $('#ad-live');
   var labels = {
-    live: ['on', 'En vivo · Binance · ' + (a.priceTime ? new Date(a.priceTime).toLocaleTimeString(LOCALE) : '')],
-    polling: ['on', 'Actualizando ' + (a.type === 'cripto' ? 'cada 5 s' : 'cada 15 s') + ' · ' + (a.priceTime ? new Date(a.priceTime).toLocaleTimeString(LOCALE) : '')],
+    live: ['on', 'En vivo · ' + (a.type === 'materia' ? 'OKX' : 'Binance') + ' · ' + (a.priceTime ? new Date(a.priceTime).toLocaleTimeString(LOCALE) : '')],
+    polling: ['on', 'Actualizando ' + (a.type === 'cripto' || a.type === 'materia' ? 'cada 5 s' : 'cada 15 s') + ' · ' + (a.priceTime ? new Date(a.priceTime).toLocaleTimeString(LOCALE) : '')],
     connecting: ['warn', 'Conectando…'],
     offline: ['', a.offlineMsg || (a.price != null ? 'Sin conexión · último precio ' + fmtTime(a.priceTime) : 'Sin conexión')],
     manual: ['', a.price != null ? 'Precio manual · ' + fmtTime(a.priceTime) : 'Sin precio: ingrésalo en «Mis activos»']
@@ -135,6 +136,7 @@ function startLive() {
   };
   var onStatus = function (st, msg) { if (asset !== a) return; a.status = st; a.offlineMsg = msg || null; renderAssetPrice(null); };
   if (a.type === 'cripto') a.conn = Market.liveCrypto(a.ticker, onTick, onStatus);
+  else if (a.type === 'materia') a.conn = Market.liveCommodity(a.ticker, onTick, onStatus);
   else if (a.type === 'accion' || a.type === 'etf') {
     if (state.settings.finnhubKey) a.conn = Market.liveStock(a.ticker, state.settings.finnhubKey, onTick, onStatus);
     else { a.status = 'offline'; a.offlineMsg = 'Para el precio en vivo de acciones añade tu API key de Finnhub en Ajustes'; renderAssetPrice(null); }
@@ -151,13 +153,13 @@ function saveLivePrice(a) {
   if (!state.investments.some(function (o) { return C.priceKey(o.assetType, o.ticker) === key; })) return;
   var prev = state.prices[key] || {};
   state.prices[key] = Object.assign({}, prev, { price: a.price, currency: a.quoteCur, change24h: a.change24h, time: a.priceTime, lastAttempt: Date.now(),
-    source: a.type === 'cripto' ? 'Binance' : 'Finnhub', error: null });
+    source: a.type === 'cripto' ? 'Binance' : a.type === 'materia' ? 'OKX' : 'Finnhub', error: null });
   if (Date.now() - lastLiveSave > 30000) { lastLiveSave = Date.now(); S.save(state); }
 }
 
 function renderAssetRanges() {
   var a = asset;
-  var ranges = (a.type === 'cripto' ? ['1D', '1S', '1M', '3M', '1A', 'todo'] : []);
+  var ranges = (a.type === 'cripto' || a.type === 'materia' ? ['1D', '1S', '1M', '3M', '1A', 'todo'] : []);
   if (a.hasOps) ranges.unshift('mis');
   $('#ad-ranges').innerHTML = ranges.map(function (r) {
     return '<button type="button" data-asset-range="' + r + '" aria-pressed="' + (a.range === r) + '">' + RANGE_LABELS[r] + '</button>';
@@ -179,6 +181,10 @@ async function loadAssetHistory() {
       var plan = C.klinePlan(a.range, Date.now(), firstOpTime(a));
       a.interval = plan.interval;
       a.points = await Market.fetchKlines(a.ticker, plan.interval, plan);
+    } else if (a.type === 'materia') {
+      var planM = C.klinePlan(a.range, Date.now(), firstOpTime(a));
+      a.interval = planM.interval;
+      a.points = await Market.fetchCommodityKlines(a.ticker, planM.interval, planM);
     } else if (a.type === 'accion' || a.type === 'etf') {
       var from = (firstOpTime(a) || Date.now() - 90 * 86400000) - 7 * 86400000;
       a.interval = '1d';
@@ -378,9 +384,15 @@ async function runSearch() {
     var m = meta('cripto', c.ticker);
     return { type: 'cripto', ticker: c.ticker, sub: (m && m.name && m.name !== c.ticker ? m.name + ' · ' : '') + 'Cripto · Binance', price: c.price };
   });
+  var comms = Market.commodityMatch(q).filter(function (c) { return !held['materia|' + c.ticker]; }).map(function (c) {
+    var pq = state.prices[C.priceKey('materia', c.ticker)];
+    return { type: 'materia', ticker: c.ticker, sub: c.name + ' · por ' + c.unit + ' · OKX', price: pq && pq.price != null && !pq.error ? pq.price : null };
+  });
   var html = '';
   if (mine.length) html += '<li class="grp" role="presentation">En tu cartera</li>' + mine.map(searchItem).join('');
+  if (comms.length && q) html += '<li class="grp" role="presentation">Materias primas</li>' + comms.map(searchItem).join('');
   if (cryptos.length) html += '<li class="grp" role="presentation">' + (q ? 'Cripto' : 'Cripto populares') + '</li>' + cryptos.map(searchItem).join('');
+  if (comms.length && !q) html += '<li class="grp" role="presentation">Materias primas</li>' + comms.map(searchItem).join('');
   html += '<li class="grp hidden" role="presentation" id="stock-grp">Acciones y ETF (Finnhub)</li>';
   if (loading) html = '<li class="grp" role="presentation">Cargando lista de Binance…</li>' + html;
   else if (!html.replace(/<li class="grp hidden"[^]*$/, '')) html = '<li class="grp" role="presentation">Sin resultados para «' + esc(q) + '»</li>' + html;

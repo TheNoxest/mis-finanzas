@@ -99,6 +99,12 @@ function renderInvList() {
   }).join('') : '<li class="empty">Aún no hay operaciones.</li>';
 }
 
+/** Materias primas: en qué unidad va la cantidad y el precio (onza troy, barril…). */
+function invUnitHint(f) {
+  var c = f.assetType.value === 'materia' ? Market.commodity(f.ticker.value) : null;
+  var PLURAL = { 'onza troy': 'onzas troy (31,1 g)', libra: 'libras', barril: 'barriles', MMBtu: 'MMBtu' };
+  return c ? ' · ' + c.name + ': cantidad en ' + (PLURAL[c.unit] || c.unit) + ', precio por ' + c.unit : '';
+}
 function updateInvPreview() {
   var f = $('#inv-form');
   var q = num(f.quantity.value), p = num(f.price.value), fee = num(f.fee.value) || 0;
@@ -109,8 +115,8 @@ function updateInvPreview() {
       ' (' + fmtNum(q) + ' × ' + fmtNum(p) + (op.side === 'compra' ? ' + ' : ' − ') + fmtNum(fee) + ')';
     if (f.currency.value !== base()) txt += ' ≈ ' + fmtMoney(C.toBase(total, f.currency.value, rates()), base());
     if (f.accountId.value) txt += (op.side === 'compra' ? ' · se descuenta de ' : ' · se acredita en ') + accName(f.accountId.value);
-    $('#inv-preview').textContent = txt;
-  } else $('#inv-preview').textContent = '';
+    $('#inv-preview').textContent = txt + invUnitHint(f);
+  } else $('#inv-preview').textContent = invUnitHint(f).replace(/^ · /, '');
 }
 
 function resetInvForm() {

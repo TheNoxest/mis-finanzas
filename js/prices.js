@@ -93,6 +93,80 @@
     return null;
   }
 
+  // ---------------------------------------------------------------- materias primas
+  // OKX (contratos perpetuos en USDT, sin clave y con CORS): precio en vivo, velas y WebSocket.
+  // Los metales tienen respaldo en gold-api.com si OKX no responde.
+  var OKX = 'https://www.okx.com';
+  var COMMODITIES = [
+    { ticker: 'XAU', name: 'Oro', unit: 'onza troy', words: 'oro gold xau', gold: 'XAU' },
+    { ticker: 'XAG', name: 'Plata', unit: 'onza troy', words: 'plata silver xag', gold: 'XAG' },
+    { ticker: 'XPT', name: 'Platino', unit: 'onza troy', words: 'platino platinum xpt', gold: 'XPT' },
+    { ticker: 'XPD', name: 'Paladio', unit: 'onza troy', words: 'paladio palladium xpd', gold: 'XPD' },
+    { ticker: 'XCU', name: 'Cobre', unit: 'libra', words: 'cobre copper xcu hg', gold: 'HG' },
+    { ticker: 'CL', name: 'Petróleo WTI', unit: 'barril', words: 'petroleo oil crudo wti cl' },
+    { ticker: 'BZ', name: 'Petróleo Brent', unit: 'barril', words: 'petroleo oil crudo brent bz' },
+    { ticker: 'NG', name: 'Gas natural', unit: 'MMBtu', words: 'gas natural natgas ng' }
+  ];
+  var plain = function (s) { return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); };
+  /** Ficha del catálogo por ticker (XAU, CL…) o null. */
+  function commodity(ticker) {
+    var t = String(ticker || '').toUpperCase();
+    return COMMODITIES.filter(function (c) { return c.ticker === t; })[0] || null;
+  }
+  /** Materias primas que coinciden con lo escrito (ticker o nombre en español/inglés, sin tildes). */
+  function commodityMatch(q) {
+    var w = plain(q).trim();
+    if (!w) return COMMODITIES.slice();
+    return COMMODITIES.filter(function (c) { return c.ticker.toLowerCase().indexOf(w) === 0 || plain(c.name + ' ' + c.words).split(/\s+/).some(function (x) { return x.indexOf(w) === 0; }); });
+  }
+  function okxId(t) { return String(t).toUpperCase() + '-USDT-SWAP'; }
+  /** Ticker de OKX → cotización; el cambio de 24 h es contra el precio de hace 24 h (open24h). */
+  function parseOkx(d) {
+    var last = Number(d.last), open = Number(d.open24h);
+    return { price: last, currency: 'USD', change24h: open > 0 ? C.round((last - open) / open * 100, 2) : null, time: Number(d.ts) || Date.now(), source: 'OKX' };
+  }
+  async function fetchCommodities(tickers) {
+    var out = {};
+    await Promise.all(tickers.map(async function (t) {
+      var c = commodity(t);
+      if (!c) { out[t] = { error: 'Materia prima desconocida: ' + t }; return; }
+      try {
+        var d = await getJSON(OKX + '/api/v5/market/ticker?instId=' + okxId(c.ticker));
+        var row = d && d.data && d.data[0];
+        if (row && Number(row.last) > 0) { out[t] = parseOkx(row); return; }
+        throw new Error('sin precio');
+      } catch (e) {
+        if (c.gold) {
+          try {
+            var g = await getJSON('https://api.gold-api.com/price/' + c.gold);
+            if (g && Number(g.price) > 0) { out[t] = { price: Number(g.price), currency: 'USD', change24h: null, time: Date.parse(g.updatedAt) || Date.now(), source: 'gold-api.com' }; return; }
+          } catch (e2) { /* sin respaldo */ }
+        }
+        out[t] = { error: 'OKX no respondió (' + e.message + ')' };
+      }
+    }));
+    return out;
+  }
+  var OKX_BAR = { '5m': ['5m', 300000], '15m': ['15m', 900000], '1h': ['1H', 3600000], '4h': ['4H', 14400000], '1d': ['1D', 86400000], '1w': ['1W', 604800000] };
+  /** Velas de OKX → [[tiempo de cierre ms, cierre]] de la más vieja a la más nueva. opts: { limit (máx. 1000), startTime } */
+  async function fetchCommodityKlines(ticker, interval, opts) {
+    opts = opts || {};
+    var c = commodity(ticker);
+    if (!c) throw new Error('Materia prima desconocida');
+    var bar = OKX_BAR[interval] || OKX_BAR['1d'], want = Math.min(opts.limit || 100, 1000), rows = [], after = '';
+    for (var page = 0; page < 10 && rows.length < want; page++) {
+      var d = await getJSON(OKX + '/api/v5/market/history-candles?instId=' + okxId(c.ticker) + '&bar=' + bar[0] + '&limit=100' + (after ? '&after=' + after : ''), 10000);
+      var data = (d && d.data) || [];
+      if (!data.length) break;
+      rows = rows.concat(data);
+      after = data[data.length - 1][0];
+      if ((opts.startTime && Number(after) <= opts.startTime) || data.length < 100) break;
+    }
+    var now = Date.now();
+    return rows.slice(0, want).filter(function (r) { return !opts.startTime || Number(r[0]) + bar[1] >= opts.startTime; })
+      .map(function (r) { return [Math.min(Number(r[0]) + bar[1], now), Number(r[4])]; }).reverse();
+  }
+
   // ---------------------------------------------------------------- acciones / ETF
   async function fetchStocks(tickers, key) {
     var out = {};
@@ -199,14 +273,14 @@
   async function refresh(state) {
     var s = state.settings, base = s.baseCurrency;
     var positions = C.buildPositions(state.investments, s.rates).positions.filter(function (p) { return p.quantity > 0; });
-    var byType = { cripto: [], accion: [], etf: [], divisa: [] };
+    var byType = { cripto: [], accion: [], etf: [], divisa: [], materia: [] };
     positions.forEach(function (p) {
       if (byType[p.assetType] && byType[p.assetType].indexOf(p.ticker) === -1) byType[p.assetType].push(p.ticker);
     });
     var result = { updated: 0, failed: [], fxError: null };
 
     // 1) Tasas de cambio (se respetan las fijadas a mano).
-    var needUsd = byType.cripto.length || byType.accion.length || byType.etf.length;
+    var needUsd = byType.cripto.length || byType.accion.length || byType.etf.length || byType.materia.length;
     var codes = Object.keys(s.rates).filter(function (c) { return !s.rateLocks[c]; });
     if (needUsd && codes.indexOf('USD') === -1 && !s.rates.USD) codes.push('USD');
     byType.divisa.forEach(function (c) { if (codes.indexOf(c) === -1 && !s.rates[c]) codes.push(c); });
@@ -224,7 +298,8 @@
     var batches = await Promise.all([
       fetchCrypto(byType.cripto).then(function (r) { return ['cripto', r]; }),
       fetchStocks(byType.accion.concat(byType.etf.filter(function (t) { return byType.accion.indexOf(t) === -1; })), s.finnhubKey)
-        .then(function (r) { return ['bolsa', r]; })
+        .then(function (r) { return ['bolsa', r]; }),
+      fetchCommodities(byType.materia).then(function (r) { return ['materia', r]; })
     ]);
     var now = Date.now();
     function store(assetType, ticker, q) {
@@ -251,6 +326,14 @@
       if (h) { p.history = h; p.historyAt = now; }
     }));
 
+    byType.materia.forEach(function (t) { store('materia', t, batches[2][1][t]); });
+    // Historial de 30 días de materias primas (para el riesgo y los consejos). Se renueva cada 6 h.
+    await Promise.all(byType.materia.map(async function (t) {
+      var p = state.prices[C.priceKey('materia', t)];
+      if (!p || p.error || (p.historyAt && now - p.historyAt < 6 * 3600 * 1000)) return;
+      try { var rows = await fetchCommodityKlines(t, '1d', { limit: 31 }); var h = C.priceStats(rows.map(function (r) { return r[1]; })); if (h) { p.history = h; p.historyAt = now; } } catch (e) { /* sin historial */ }
+    }));
+
     byType.accion.forEach(function (t) { store('accion', t, batches[1][1][t]); });
     byType.etf.forEach(function (t) { store('etf', t, batches[1][1][t]); });
 
@@ -264,7 +347,8 @@
     return result;
   }
 
-  root.Prices = { refresh: refresh, refreshRates: refreshRates, fetchFxLive: fetchFxLive, fetchCrypto: fetchCrypto, fetchCryptoHistory: fetchCryptoHistory, fetchStocks: fetchStocks, fetchFx: fetchFx, binanceSymbol: binanceSymbol };
+  root.Prices = { refresh: refresh, refreshRates: refreshRates, fetchFxLive: fetchFxLive, fetchCrypto: fetchCrypto, fetchCryptoHistory: fetchCryptoHistory, fetchStocks: fetchStocks, fetchFx: fetchFx, binanceSymbol: binanceSymbol,
+    fetchCommodities: fetchCommodities, parseOkx: parseOkx };
 
   // =========================================================================
   // Market — datos para la ficha de un activo: búsqueda, historial, logo y
@@ -415,6 +499,60 @@
     return { close: function () { closed = true; stopPolling(); clearTimeout(retryTimer); clearTimeout(watchdog); if (ws) try { ws.close(); } catch (e) { /* nada */ } } };
   }
 
+  /**
+   * Precio en vivo de una materia prima por WebSocket de OKX (canal tickers). OKX corta la conexión si no recibe
+   * «ping» en 30 s: se envía cada 20 s. Si falla, REST cada 5 s y reintento con espera creciente (igual que cripto).
+   */
+  function liveCommodity(ticker, onTick, onStatus) {
+    var c = commodity(ticker), instId = okxId(c ? c.ticker : ticker);
+    var ws = null, closed = false, attempt = 0, pollTimer = null, retryTimer = null, watchdog = null, pingTimer = null, gotData = false;
+    function poll() {
+      if (closed) return;
+      fetchCommodities([ticker]).then(function (r) {
+        var x = r[ticker];
+        if (x && !x.error) { onTick({ price: x.price, change24h: x.change24h, high: NaN, low: NaN, volume: NaN, time: x.time }); onStatus('polling'); }
+        else onStatus('offline');
+      });
+    }
+    function startPolling() { if (!pollTimer) { poll(); pollTimer = setInterval(poll, 5000); } }
+    function stopPolling() { clearInterval(pollTimer); pollTimer = null; }
+    function connect() {
+      if (closed) return;
+      onStatus('connecting');
+      try { ws = new WebSocket('wss://ws.okx.com:8443/ws/v5/public'); } catch (e) { scheduleRetry(); return; }
+      ws.onopen = function () {
+        attempt = 0;
+        ws.send(JSON.stringify({ op: 'subscribe', args: [{ channel: 'tickers', instId: instId }] }));
+        clearInterval(pingTimer); pingTimer = setInterval(function () { try { ws.send('ping'); } catch (e) { /* cerrado */ } }, 20000);
+        clearTimeout(watchdog);
+        watchdog = setTimeout(function () { if (!gotData) startPolling(); }, 12000);
+      };
+      ws.onmessage = function (m) {
+        if (m.data === 'pong') return;
+        try {
+          var d = JSON.parse(m.data), row = d && d.data && d.data[0];
+          if (!row || !(Number(row.last) > 0)) return;
+          if (!gotData) { gotData = true; stopPolling(); clearTimeout(watchdog); }
+          var p = parseOkx(row);
+          onTick({ price: p.price, change24h: p.change24h, high: Number(row.high24h), low: Number(row.low24h), volume: NaN, time: p.time });
+          onStatus('live');
+        } catch (e) { /* mensaje inválido */ }
+      };
+      ws.onclose = function () { clearInterval(pingTimer); if (!closed) scheduleRetry(); };
+      ws.onerror = function () { try { ws.close(); } catch (e) { /* ya cerrado */ } };
+    }
+    function scheduleRetry() {
+      gotData = false;
+      startPolling();
+      attempt++;
+      clearTimeout(retryTimer);
+      retryTimer = setTimeout(connect, Math.min(30000, 2000 * attempt));
+    }
+    poll();
+    connect();
+    return { close: function () { closed = true; stopPolling(); clearTimeout(retryTimer); clearTimeout(watchdog); clearInterval(pingTimer); if (ws) try { ws.close(); } catch (e) { /* nada */ } } };
+  }
+
   /** Precio "en vivo" de una acción: consulta a Finnhub cada 15 s (límite gratuito: 60/min). */
   function liveStock(ticker, key, onTick, onStatus) {
     var closed = false;
@@ -458,11 +596,12 @@
   }
 
   /** Riesgo con 1 año de cierres diarios de Binance. Caché 12 h. */
-  async function fetchRisk(ticker) {
-    var k = 'risk|' + ticker.toUpperCase();
+  async function fetchRisk(ticker, type) {
+    var mat = type === 'materia';
+    var k = 'risk|' + (mat ? 'materia|' : '') + ticker.toUpperCase();
     var hit = cacheGet(k, 12 * 3600000);
     if (hit) return hit;
-    var rows = await fetchKlines(ticker, '1d', { limit: 366 });
+    var rows = mat ? await fetchCommodityKlines(ticker, '1d', { limit: 366 }) : await fetchKlines(ticker, '1d', { limit: 366 });
     var st = root.Insights.riskStats(rows.map(function (r) { return r[1]; }), 365);
     if (st) cacheSet(k, st);
     return st;
@@ -570,7 +709,8 @@
   root.Market = {
     listCryptoSymbols: listCryptoSymbols, fetchKlines: fetchKlines, fetchCryptoMeta: fetchCryptoMeta,
     fetchStockMeta: fetchStockMeta, searchStocks: searchStocks, fetchStockCandles: fetchStockCandles,
-    liveCrypto: liveCrypto, liveStock: liveStock,
+    liveCrypto: liveCrypto, liveStock: liveStock, liveCommodity: liveCommodity,
+    COMMODITIES: COMMODITIES, commodity: commodity, commodityMatch: commodityMatch, fetchCommodityKlines: fetchCommodityKlines,
     fetchTopCryptos: fetchTopCryptos, fetchRisk: fetchRisk, fetchCoinInfo: fetchCoinInfo, fetchStockInfo: fetchStockInfo,
     fetchNews: fetchNews, newsSearchUrl: newsSearchUrl
   };

@@ -6,7 +6,7 @@
 'use strict';
 
 // ================================================================ explorar activos y sugeridos
-var explore = { tab: 'cripto', cryptos: null, risks: {}, loading: false, error: null, etfQuotes: {}, at: 0 };
+var explore = { tab: 'cripto', cryptos: null, risks: {}, loading: false, error: null, etfQuotes: {}, commQuotes: {}, commLoading: false, at: 0 };
 var RISK_TEXT = {
   1: 'Se mueve muy poco: pensado para dinero que no quieres arriesgar.',
   2: 'Movimientos pequeños; en momentos malos puede caer algo, pero poco.',
@@ -69,6 +69,20 @@ function renderExplore() {
         (ch != null ? '<span class="small ' + trend(ch) + '">' + fmtPct(C.round(ch, 2)) + ' 24 h</span>' : '') + '</div></li>';
     }).join('') || '<li class="empty">Ninguna cripto de la lista encaja con tu perfil.</li>';
     $('#explore-note').textContent = 'Las ' + explore.cryptos.length + ' criptos de mayor capitalización (sin estables) que puedes seguir en Binance. Riesgo calculado con 1 año de cierres diarios. Toca una para ver su historial, datos y noticias.';
+  } else if (explore.tab === 'materia') {
+    if (!explore.commLoading && !Object.keys(explore.commQuotes).length) loadCommodities();
+    var comms = Market.COMMODITIES.filter(function (c) { var r = explore.risks['materia|' + c.ticker]; return !onlyFit || !r || fit(r.level); });
+    list.innerHTML = comms.map(function (c) {
+      var r = explore.risks['materia|' + c.ticker], q = explore.commQuotes[c.ticker] || state.prices[C.priceKey('materia', c.ticker)];
+      var ok = q && q.price != null && !q.error;
+      return '<li data-open-asset="materia|' + esc(c.ticker) + '" tabindex="0" role="button" aria-label="Ver ' + esc(c.name) + '">' +
+        '<span class="mini-logo">' + esc(c.ticker) + '</span>' +
+        '<div class="main"><div class="title">' + esc(c.name) + '</div><div class="sub">' + esc(c.ticker) + ' · precio por ' + esc(c.unit) + '</div>' +
+        '<div style="margin-top:4px">' + (r ? riskBadge(r.level) + ' ' + fitTag(r.level) : '<span class="risk">Calculando riesgo…</span>') + '</div></div>' +
+        '<div class="ex-right"><span class="ex-price">' + (ok ? fmtPrice(q.price, 'USD') : '—') + '</span>' +
+        (ok && q.change24h != null ? '<span class="small ' + trend(q.change24h) + '">' + fmtPct(C.round(q.change24h, 2)) + ' 24 h</span>' : '') + '</div></li>';
+    }).join('') || '<li class="empty">Ninguna encaja con tu perfil.</li>';
+    $('#explore-note').textContent = 'Metales, petróleo y gas con precio en vivo de OKX (oro y plata por onza troy de 31,1 g; petróleo por barril). Riesgo calculado con 1 año de cierres diarios. Toca una para ver su gráfico.';
   } else {
     var etfs = Insights.ETF_CATALOG.filter(function (e) { return !onlyFit || fit(e.risk); });
     list.innerHTML = etfs.map(function (e) {
@@ -84,6 +98,21 @@ function renderExplore() {
     $('#explore-note').textContent = 'Fondos muy conocidos de distintos tipos, como punto de partida para investigar. El riesgo es el típico de su historia (referencia).' +
       (key ? '' : ' Para ver precios, datos y noticias de ETF y acciones añade tu API key gratuita de Finnhub en Ajustes.');
   }
+}
+
+/** Precios y riesgo de las materias primas (pestaña de Explorar). */
+async function loadCommodities() {
+  if (explore.commLoading) return;
+  explore.commLoading = true;
+  try { explore.commQuotes = await Prices.fetchCommodities(Market.COMMODITIES.map(function (c) { return c.ticker; })); } catch (e) { /* sin precios */ }
+  if (explore.tab === 'materia') renderExplore();
+  for (var i = 0; i < Market.COMMODITIES.length; i++) {
+    var t = Market.COMMODITIES[i].ticker;
+    if (explore.risks['materia|' + t]) continue;
+    try { var st = await Market.fetchRisk(t, 'materia'); if (st) explore.risks['materia|' + t] = st; } catch (e) { /* sin riesgo */ }
+    if (explore.tab === 'materia') renderExplore();
+  }
+  explore.commLoading = false;
 }
 
 /** Carga la lista de criptos y su riesgo (poco a poco) y los precios de los ETF. */
@@ -115,6 +144,15 @@ async function loadExplore(force) {
 async function loadAssetInsights() {
   var a = asset; if (!a) return;
   ['#ad-risk', '#ad-info', '#ad-news'].forEach(function (s) { $(s).classList.add('hidden'); $(s).innerHTML = ''; });
+  if (a.type === 'materia') {
+    var mc = Market.commodity(a.ticker), mname = mc ? mc.name : a.ticker;
+    renderAssetRisk(a, null, true);
+    Market.fetchRisk(a.ticker, 'materia').then(function (st) { if (st) explore.risks['materia|' + a.ticker] = st; renderAssetRisk(a, st, false); })
+      .catch(function () { renderAssetRisk(a, null, false); });
+    $('#ad-news').classList.remove('hidden');
+    $('#ad-news').innerHTML = '<h2>Noticias</h2><p style="margin:0"><a href="' + esc(Market.newsSearchUrl('precio del ' + mname.toLowerCase())) + '" target="_blank" rel="noopener noreferrer">Ver noticias del ' + esc(mname.toLowerCase()) + ' en Google Noticias ↗</a></p>';
+    return;
+  }
   var market = a.type === 'cripto' || a.type === 'etf' || a.type === 'accion';
   if (!market) return;
   var key = state.settings.finnhubKey;

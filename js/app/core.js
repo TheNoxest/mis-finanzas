@@ -33,9 +33,9 @@ var calcRev = 0;
 var $ = function (s, el) { return (el || document).querySelector(s); };
 var $$ = function (s, el) { return Array.prototype.slice.call((el || document).querySelectorAll(s)); };
 
-var ASSET_LABELS = { accion: 'Acción', etf: 'ETF', cripto: 'Cripto', divisa: 'Divisa', otro: 'Otro' };
+var ASSET_LABELS = { accion: 'Acción', etf: 'ETF', cripto: 'Cripto', materia: 'Materia prima', divisa: 'Divisa', otro: 'Otro' };
 // Color fijo por tipo de activo (sigue a la entidad, nunca al ranking).
-var ASSET_COLORS = { accion: 'var(--s1)', etf: 'var(--s2)', cripto: 'var(--s3)', divisa: 'var(--s4)', otro: 'var(--s5)' };
+var ASSET_COLORS = { accion: 'var(--s1)', etf: 'var(--s2)', cripto: 'var(--s3)', materia: 'var(--s4)', divisa: 'var(--s4)', otro: 'var(--s5)' };
 var KIND_ICONS = { banco: 'i-bank', efectivo: 'i-cash', billetera: 'i-phone', broker: 'i-chart', ahorro: 'i-piggy', otro: 'i-wallet' };
 var LOCALE = (navigator.language || 'es').toLowerCase().indexOf('es') === 0 ? navigator.language : 'es';
 var REFRESH_MS = 2 * 60 * 1000;
@@ -281,7 +281,8 @@ function renderSelects() {
 
   var tickers = {};
   state.investments.forEach(function (i) { tickers[i.ticker] = true; });
-  $('#ticker-list').innerHTML = Object.keys(tickers).sort().map(function (t) { return '<option value="' + esc(t) + '">'; }).join('');
+  Market.COMMODITIES.forEach(function (c) { if (!tickers[c.ticker]) tickers[c.ticker] = c.name + ' (' + c.unit + ')'; });   // materias primas sugeridas
+  $('#ticker-list').innerHTML = Object.keys(tickers).sort().map(function (t) { return '<option value="' + esc(t) + '"' + (tickers[t] !== true ? ' label="' + esc(tickers[t]) + '"' : '') + '>'; }).join('');
 }
 
 function renderCategorySelect() {
