@@ -209,6 +209,57 @@
       .sort(function (a, b) { return b.total - a.total; });
   }
 
+  // =================================================================== Unidades (materias primas)
+  /**
+   * Las materias primas cotizan en una unidad fija (oro por onza troy, cobre por libra, petróleo por barril…),
+   * pero una compra se puede registrar en otra (gramos, kilos, litros…). La operación guarda su cantidad y su
+   * precio en la unidad elegida (`unit`); las posiciones se llevan en la unidad de la cotización.
+   *  f = cuánto vale 1 unidad en la unidad de referencia de su dimensión (gramo, litro).
+   */
+  var UNITS = {
+    oz: { dim: 'masa', f: 31.1034768, short: 'oz', one: 'onza troy', many: 'onzas troy' },
+    g: { dim: 'masa', f: 1, short: 'g', one: 'gramo', many: 'gramos' },
+    kg: { dim: 'masa', f: 1000, short: 'kg', one: 'kilo', many: 'kilos' },
+    lb: { dim: 'masa', f: 453.59237, short: 'lb', one: 'libra', many: 'libras' },
+    t: { dim: 'masa', f: 1000000, short: 't', one: 'tonelada', many: 'toneladas' },
+    bbl: { dim: 'volumen', f: 158.987294928, short: 'bbl', one: 'barril', many: 'barriles' },
+    L: { dim: 'volumen', f: 1, short: 'L', one: 'litro', many: 'litros' },
+    gal: { dim: 'volumen', f: 3.785411784, short: 'gal', one: 'galón', many: 'galones' },
+    MMBtu: { dim: 'energia', f: 1, short: 'MMBtu', one: 'MMBtu', many: 'MMBtu' }
+  };
+  var QUOTE_UNIT = { XAU: 'oz', XAG: 'oz', XPT: 'oz', XPD: 'oz', XCU: 'lb', CL: 'bbl', BZ: 'bbl', NG: 'MMBtu' };
+  var UNIT_CHOICES = { oz: ['g', 'oz', 'kg'], lb: ['lb', 'kg', 't'], bbl: ['bbl', 'L', 'gal'], MMBtu: ['MMBtu'] };
+
+  /** Convierte una cantidad entre unidades de la misma dimensión (si no se puede, la deja igual). */
+  function unitConvert(q, from, to) {
+    var a = UNITS[from], b = UNITS[to];
+    if (!a || !b || from === to || a.dim !== b.dim) return Number(q);
+    return Number(q) * a.f / b.f;
+  }
+  /** Unidad en la que cotiza un activo (null si no es una materia prima conocida). */
+  function quoteUnit(assetType, ticker) {
+    return assetType === 'materia' ? QUOTE_UNIT[String(ticker || '').trim().toUpperCase()] || null : null;
+  }
+  /** Unidades que se pueden elegir al registrar ese activo ([] si no aplica). */
+  function unitChoices(assetType, ticker) {
+    var qu = quoteUnit(assetType, ticker);
+    return qu ? UNIT_CHOICES[qu].slice() : [];
+  }
+  /** Cantidad de la operación en la unidad de la cotización (3,5 g de oro → 0,11252670 oz). */
+  function opQty(op) {
+    var qu = quoteUnit(op.assetType, op.ticker);
+    return qu && op.unit ? unitConvert(op.quantity, op.unit, qu) : Number(op.quantity);
+  }
+  /** Precio por unidad de la cotización (120 USD/g → 3732,42 USD/oz). */
+  function opQuotePrice(op) {
+    var q = opQty(op);
+    return q > 0 ? Number(op.quantity) * Number(op.price) / q : Number(op.price);
+  }
+  /** Precio por `unit` a partir del precio por unidad de cotización `qu` (3817,20 USD/oz → 122,73 USD/g). */
+  function pricePerUnit(price, qu, unit) {
+    return Number(price) * unitConvert(1, unit, qu);
+  }
+
   /** Importe de una operación de inversión en su moneda.
    *  Compra: cantidad × precio + comisión (dinero que sale).
    *  Venta:  cantidad × precio − comisión (dinero que entra). */
@@ -373,27 +424,33 @@
         p = map[key] = {
           key: key, priceKey: priceKey(op.assetType, op.ticker), assetType: op.assetType,
           ticker: String(op.ticker).trim().toUpperCase(), currency: op.currency,
-          quantity: 0, cost: 0, realized: 0, fees: 0, operations: 0, sales: []
+          quantity: 0, cost: 0, realized: 0, fees: 0, operations: 0, sales: [],
+          quoteUnit: quoteUnit(op.assetType, op.ticker), unit: null
         };
         order.push(key);
       }
-      var q = Number(op.quantity), px = Number(op.price), fee = Number(op.fee) || 0;
+      // Cantidad en la unidad de la cotización (materias primas en gramos, litros…); el dinero no cambia
+      var q = opQty(op), gross = Number(op.quantity) * Number(op.price), fee = Number(op.fee) || 0;
+      var px = q > 0 ? gross / q : Number(op.price);
       p.operations++;
       p.fees = round(p.fees + fee, 2);
+      if (p.quoteUnit) p.unit = op.unit || p.quoteUnit; // se muestra en la unidad de la última operación
 
       if (op.side === 'compra') {
         p.quantity = round(p.quantity + q, 8);
-        p.cost = round(p.cost + q * px + fee, 2);
+        p.cost = round(p.cost + gross + fee, 2);
       } else {
         if (q > p.quantity + 1e-9) {
-          errors.push({ id: op.id, ticker: p.ticker, date: op.date, wanted: q, available: p.quantity });
+          errors.push({ id: op.id, ticker: p.ticker, date: op.date, wanted: q, available: p.quantity,
+            unit: p.quoteUnit ? op.unit || p.quoteUnit : null, quoteUnit: p.quoteUnit });
         }
         var sellQ = Math.min(q, p.quantity);
         var costOut = p.quantity > 0 ? round(p.cost * sellQ / p.quantity, 2) : 0;
-        p.realized = round(p.realized + sellQ * px - fee - costOut, 2);
+        var proceeds = sellQ >= q ? gross : sellQ * px;
+        p.realized = round(p.realized + proceeds - fee - costOut, 2);
         // Cada venta con su fecha (para el resumen anual / impuestos)
-        p.sales.push({ id: op.id, date: op.date, quantity: sellQ, proceeds: round(sellQ * px, 2), fee: round(fee, 2),
-          cost: costOut, gain: round(sellQ * px - fee - costOut, 2) });
+        p.sales.push({ id: op.id, date: op.date, quantity: sellQ, proceeds: round(proceeds, 2), fee: round(fee, 2),
+          cost: costOut, gain: round(proceeds - fee - costOut, 2), unit: p.quoteUnit });
         p.quantity = round(p.quantity - sellQ, 8);
         p.cost = round(p.cost - costOut, 2);
         if (p.quantity <= 0) { p.quantity = 0; p.cost = 0; } // posición cerrada
@@ -674,7 +731,7 @@
       push({ key: 'inv:' + o.id, date: o.date, createdAt: o.createdAt, group: 'inversion', kind: buy ? 'compra' : 'venta_inv', person: '',
         concept: String(o.ticker || '').toUpperCase(), note: o.note || '', currency: o.currency, amount: tot,
         parts: o.accountId ? [{ accountId: o.accountId, amount: round(buy ? -tot : tot, 2) }] : [], status: '', ref: { kind: 'inv', id: o.id },
-        extra: { quantity: o.quantity, price: o.price } });
+        extra: { quantity: o.quantity, price: o.price, unit: o.unit || null } });
     });
     (state.exchanges || []).forEach(function (x) {
       var st = exchangeSettlement(x), parts = [];
@@ -1408,7 +1465,8 @@
       .map(function (o) {
         var same = norm(o.currency) === norm(quoteCur);
         var a = rateOf(rates, o.currency), b = rateOf(rates, norm(quoteCur));
-        var y = same ? Number(o.price) : (a > 0 && b > 0 ? round(Number(o.price) * a / b, 8) : NaN);
+        var px = opQuotePrice(o); // materias primas en gramos → precio por onza (como el gráfico)
+        var y = same ? round(px, 8) : (a > 0 && b > 0 ? round(px * a / b, 8) : NaN);
         return { t: Date.parse(o.date + 'T12:00:00'), y: y, kind: o.side, op: o, converted: !same };
       })
       .filter(function (m) { return isFinite(m.y); })
@@ -1571,6 +1629,8 @@
     PEGGED: PEGGED, pegOf: pegOf, rateOf: rateOf, marketRate: marketRate,
     summarizeTransactions: summarizeTransactions, totalsByCategory: totalsByCategory,
     operationTotal: operationTotal, accountBalances: accountBalances,
+    UNITS: UNITS, QUOTE_UNIT: QUOTE_UNIT, unitConvert: unitConvert, quoteUnit: quoteUnit, unitChoices: unitChoices,
+    opQty: opQty, opQuotePrice: opQuotePrice, pricePerUnit: pricePerUnit,
     priceKey: priceKey, buildPositions: buildPositions, valuePortfolio: valuePortfolio,
     netWorth: netWorth,
     addDays: addDays, daysBetween: daysBetween, monthsBetween: monthsBetween, previousPeriod: previousPeriod,

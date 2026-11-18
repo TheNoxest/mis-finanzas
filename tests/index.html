@@ -341,6 +341,28 @@
     eq('Ficha: XAU = Oro por onza troy; desconocido → null', [MK.commodity('xau').name, MK.commodity('xau').unit, MK.commodity('ZZZ')], ['Oro', 'onza troy', null]);
     var okq = Prices.parseOkx({ last: '3815.1', open24h: '3867.3', ts: '1794966859667' });
     eq('Precio de OKX: 3.815,10 USD; cambio 24 h = (3815,1 − 3867,3) ÷ 3867,3 = −1,35 %', [okq.price, okq.change24h, okq.currency, okq.source], [3815.1, -1.35, 'USD', 'OKX']);
+    eq('Unidad de cotización: oro por onza, cobre por libra, WTI por barril; una acción no tiene', [C.quoteUnit('materia', 'xau'), C.quoteUnit('materia', 'XCU'), C.quoteUnit('materia', 'CL'), C.quoteUnit('accion', 'XAU')], ['oz', 'lb', 'bbl', null]);
+    eq('Unidades a elegir: oro g/oz/kg; petróleo bbl/L/gal; gas solo MMBtu', [C.unitChoices('materia', 'XAU'), C.unitChoices('materia', 'BZ'), C.unitChoices('materia', 'NG'), C.unitChoices('cripto', 'BTC')], [['g', 'oz', 'kg'], ['bbl', 'L', 'gal'], ['MMBtu'], []]);
+    eq('3,5 g = 3,5 ÷ 31,1034768 = 0,11252761 oz; 1 kg = 32,1507 oz; 42 galones = 1 barril; 100 L = 0,62898108 bbl',
+      [C.round(C.unitConvert(3.5, 'g', 'oz'), 8), C.round(C.unitConvert(1, 'kg', 'oz'), 4), C.round(C.unitConvert(42, 'gal', 'bbl'), 8), C.round(C.unitConvert(100, 'L', 'bbl'), 8), C.unitConvert(5, 'g', 'bbl')],
+      [0.11252761, 32.1507, 1, 0.62898108, 5]);
+    eq('Oro a 3.817,20 USD/oz = 3817,2 ÷ 31,1034768 = 122,73 USD por gramo; 120 USD/g = 3.732,42 USD/oz',
+      [C.round(C.pricePerUnit(3817.2, 'oz', 'g'), 2), C.round(C.opQuotePrice({ assetType: 'materia', ticker: 'XAU', quantity: 3.5, price: 120, unit: 'g' }), 2)], [122.73, 3732.42]);
+    var goldOps = [
+      { id: 'g1', side: 'compra', assetType: 'materia', ticker: 'XAU', quantity: 3.5, price: 120, unit: 'g', currency: 'USD', fee: 0, date: '2026-11-01' },
+      { id: 'g2', side: 'compra', assetType: 'materia', ticker: 'XAU', quantity: 0.1, price: 3800, unit: 'oz', currency: 'USD', fee: 0, date: '2026-11-02' },
+      { id: 'g3', side: 'venta', assetType: 'materia', ticker: 'XAU', quantity: 2, price: 125, unit: 'g', currency: 'USD', fee: 0, date: '2026-11-03' }];
+    var gp = C.buildPositions(goldOps.slice(0, 2), { USD: 1 }).positions[0];
+    eq('Compra 3,5 g × 120 = 420 + 0,1 oz × 3.800 = 380 → 0,21252761 oz con costo 800 (se muestra en oz, la última unidad)', [gp.quantity, gp.cost, gp.unit, gp.quoteUnit], [0.21252761, 800, 'oz', 'oz']);
+    var gpv = C.valuePortfolio([gp], { 'materia|XAU': { price: 3817.2, currency: 'USD' } }, { USD: 1 }).rows[0];
+    eq('Valor hoy: 0,21252761 × 3.817,20 = 811,26; ganancia = 811,26 − 800 = +11,26 (+1,41 %)', [gpv.valueBase, gpv.pnlBase, gpv.pnlPct], [811.26, 11.26, 1.41]);
+    var gs = C.buildPositions(goldOps, { USD: 1 });
+    eq('Venta 2 g × 125 = 250: salen 0,06430149 oz, costo 800 × 0,06430149 ÷ 0,21252761 = 242,04, realizada +7,96; quedan 0,14822612 oz',
+      [gs.positions[0].sales[0].proceeds, gs.positions[0].sales[0].cost, gs.positions[0].realized, gs.positions[0].quantity, gs.errors.length], [250, 242.04, 7.96, 0.14822612, 0]);
+    var gErr = C.buildPositions(goldOps.slice(0, 1).concat([Object.assign({}, goldOps[2], { quantity: 5 })]), { USD: 1 }).errors[0];
+    eq('Vender 5 g teniendo 3,5 g → error en gramos (unidad g, cotiza en oz)', [!!gErr, gErr.unit, gErr.quoteUnit, C.round(C.unitConvert(gErr.available, 'oz', 'g'), 4)], [true, 'g', 'oz', 3.5]);
+    eq('Marcas del gráfico en precio por onza: 120 USD/g → 3.732,42', C.round(C.opMarkers(goldOps, 'materia', 'XAU', { USD: 1 }, 'USD')[0].y, 2), 3732.42);
+    eq('Sin unidad (operaciones viejas) todo sigue igual: 2 oz × 3.000', [C.opQty({ assetType: 'materia', ticker: 'XAU', quantity: 2 }), C.opQuotePrice({ assetType: 'materia', ticker: 'XAU', quantity: 2, price: 3000 })], [2, 3000]);
 
     section('«Para hoy» en Inicio');
     var agTp = { receivables: [

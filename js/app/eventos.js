@@ -78,8 +78,8 @@ function bind() {
   inf.currency.addEventListener('change', renderInvAccountSelect);
   inf.accountId.addEventListener('change', renderInvAccountSelect);
   $$('input[name="side"]', inf).forEach(function (r) { r.addEventListener('change', renderInvAccountSelect); });
-  inf.addEventListener('input', updateInvPreview);
-  inf.addEventListener('change', updateInvPreview);
+  inf.addEventListener('input', function (e) { onInvFormInput(e); updateInvPreview(); });
+  inf.addEventListener('change', function (e) { if (e.target.name === 'unit') onInvFormInput(e); updateInvPreview(); });
 
   $('#acc-form').addEventListener('submit', onAccSubmit);
   $('#profile-form').addEventListener('submit', onProfileSubmit);
@@ -428,6 +428,7 @@ function bind() {
     else if (d.assetRange) { asset.range = d.assetRange; renderAssetRanges(); loadAssetHistory(); }
     else if (d.assetOp) prefillOperation(d.assetOp);
     else if (d.action === 'delete-tx') { var txId = $('#tx-form').editId.value; if (txId) deleteWithUndo('tx', txId); }
+    else if (d.action === 'inv-use-live') useInvLivePrice();
     else if (d.action === 'delete-inv') { var invId = $('#inv-form').editId.value; if (invId) deleteWithUndo('inv', invId); } else if (d.editAcc) editAcc(d.editAcc);
     else if (d.accMoves) {
       $('#f-account').value = d.accMoves; $('#f-month').value = ''; $('#f-type').value = '';

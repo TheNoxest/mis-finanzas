@@ -215,8 +215,9 @@ function updateLivePoint() {
 function opTipHtml(m) {
   var o = m.op, total = C.operationTotal(o);
   return '<b>' + (o.side === 'compra' ? '▲ Compra' : '▼ Venta') + ' · ' + fmtDate(o.date) + '</b>' +
-    '<div class="row"><span>Cantidad</span><span>' + fmtNum(o.quantity) + ' ' + esc(o.ticker) + '</span></div>' +
-    '<div class="row"><span>Precio</span><span>' + fmtPrice(o.price, o.currency) + '</span></div>' +
+    '<div class="row"><span>Cantidad</span><span>' + esc(opQtyText(o)) + '</span></div>' +
+    '<div class="row"><span>Precio</span><span>' + opPriceText(o) + '</span></div>' +
+    (o.unit && o.unit !== C.quoteUnit(o.assetType, o.ticker) ? '<div class="row"><span>Por ' + esc(unitOne(C.quoteUnit(o.assetType, o.ticker))) + '</span><span>' + fmtPrice(m.y, asset.quoteCur) + '</span></div>' : '') +
     (o.fee ? '<div class="row"><span>Comisión</span><span>' + fmtMoney(o.fee, o.currency) + '</span></div>' : '') +
     '<div class="row"><span>' + (o.side === 'compra' ? 'Pagaste' : 'Recibiste') + '</span><span>' + fmtMoney(total, o.currency) + '</span></div>' +
     (m.converted ? '<div class="small">Precio convertido a ' + esc(asset.quoteCur) + ' con la tasa actual</div>' : '');
@@ -304,8 +305,9 @@ function renderAssetPosition() {
   var pnlPct = isFinite(pnl) && pos.costBase > 0 ? C.round(pnl / pos.costBase * 100, 2) : NaN;
   $('#ad-position').innerHTML = '<h2>Mi posición</h2>' +
     '<div class="stat-row">' +
-    stat('Cantidad', fmtNum(pos.quantity) + ' ' + esc(a.ticker)) +
-    stat('Costo promedio', pos.quantity > 0 ? fmtPrice(pos.avgPrice, pos.currency) : '—') +
+    stat('Cantidad', esc(posQtyText(pos, true))) +
+    stat('Costo promedio', pos.quantity > 0 ? posAvgText(pos) : '—') +
+    (pos.quoteUnit && pos.unit && pos.unit !== pos.quoteUnit && a.price != null ? stat('Precio por ' + esc(unitOne(pos.unit)), fmtPrice(C.pricePerUnit(a.price, pos.quoteUnit, pos.unit), a.quoteCur)) : '') +
     stat('Valor actual', pos.quantity > 0 && isFinite(valueBase) ? fmtMoney(valueBase, b) : '—') +
     (pos.quantity > 0 && isFinite(pnl) ? stat('Ganancia / pérdida', '<span class="' + trend(pnl) + '">' + fmtSigned(pnl, b) + ' (' + fmtPct(pnlPct) + ')</span>') : '') +
     (pos.realized ? stat('Realizada', '<span class="' + trend(pos.realizedBase) + '">' + fmtSigned(pos.realizedBase, b) + '</span>') : '') +
@@ -313,7 +315,7 @@ function renderAssetPosition() {
     '<h3>Mis operaciones <span class="muted small" style="text-transform:none;letter-spacing:0">· toca una para editarla</span></h3><ul class="list">' + ops.map(function (o) {
       var buy = o.side === 'compra', total = C.operationTotal(o);
       return '<li class="clickable" data-edit-inv="' + o.id + '" tabindex="0" role="button"><span class="avatar ' + (buy ? 'out' : 'in') + '">' + icon(buy ? 'i-out' : 'i-in') + '</span>' +
-        '<div class="main"><div class="title">' + (buy ? '▲ Compra' : '▼ Venta') + '</div><div class="sub">' + fmtDate(o.date) + ' · ' + fmtNum(o.quantity) + ' × ' + fmtPrice(o.price, o.currency) + '</div></div>' +
+        '<div class="main"><div class="title">' + (buy ? '▲ Compra' : '▼ Venta') + '</div><div class="sub">' + fmtDate(o.date) + ' · ' + opQtyText(o) + ' × ' + opPriceText(o) + '</div></div>' +
         '<div class="amt">' + (buy ? '−' : '+') + fmtMoney(total, o.currency) + '</div></li>';
     }).join('') + '</ul>' + actions;
 }
@@ -327,7 +329,12 @@ function prefillOperation(side) {
   var f = $('#inv-form');
   $('#inv-details').open = true;
   f.side.value = side; f.assetType.value = type; f.ticker.value = ticker;
-  if (price != null && f.currency.value === quote) f.price.value = C.round(price, 8);
+  syncInvUnits(f);
+  var qu = C.quoteUnit(type, ticker);
+  if (price != null && f.currency.value === quote) {
+    f.price.value = qu ? livePriceValue(C.pricePerUnit(price, qu, f.unit.value || qu)) : C.round(price, 8);
+    if (qu) f.price.dataset.auto = '1';
+  }
   renderInvAccountSelect(); updateInvPreview();
   $('#inv-details').scrollIntoView({ behavior: 'smooth', block: 'start' });
   f.quantity.focus({ preventScroll: true });

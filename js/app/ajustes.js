@@ -88,10 +88,10 @@ function exportInvCSV() {
   var b = base();
   var rows = state.investments.slice().sort(function (a, c) { return a.date < c.date ? -1 : a.date > c.date ? 1 : 0; }).map(function (o) {
     var total = C.operationTotal(o);
-    return [o.date, o.side, ASSET_LABELS[o.assetType], o.ticker, o.quantity, o.price, o.currency, o.fee || 0,
+    return [o.date, o.side, ASSET_LABELS[o.assetType], o.ticker, o.quantity, o.unit || C.quoteUnit(o.assetType, o.ticker) || '', o.price, o.currency, o.fee || 0,
       total, o.accountId ? accName(o.accountId) : '', rates()[o.currency], C.toBase(total, o.currency, rates()), b, o.note || ''];
   });
-  S.download('inversiones_' + S.today() + '.csv', S.toCSV(['fecha', 'operacion', 'tipo_activo', 'ticker', 'cantidad', 'precio', 'moneda', 'comision',
+  S.download('inversiones_' + S.today() + '.csv', S.toCSV(['fecha', 'operacion', 'tipo_activo', 'ticker', 'cantidad', 'unidad', 'precio', 'moneda', 'comision',
     'total', 'cuenta', 'tasa_a_base', 'total_base', 'moneda_base', 'nota'], rows), 'text/csv');
 }
 

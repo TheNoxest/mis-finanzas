@@ -840,3 +840,10 @@ label.has-suggest { position: relative; }
 .gs-tips i { color: var(--ink); font-style: normal; background: var(--surface-2); padding: 0 6px; border-radius: 6px; }
 .gs-more { justify-content: center; border-bottom: 0; } .gs-empty { margin: 18px 0 6px; }
 body.gs-open { overflow: hidden; } body.gs-open .fab { display: none; }
+
+/* Materias primas: cotización de hoy en la unidad elegida (formulario de inversiones) */
+.inv-live { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .75rem; margin: .5rem 0 0; padding: .6rem .75rem;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2, transparent); font-size: .875rem; }
+.inv-live .il-main { flex: 1 1 14rem; min-width: 0; }
+.inv-live .il-sub { display: block; color: var(--muted); font-size: .8125rem; }
+.inv-live button { flex: 0 0 auto; min-height: 36px; padding: .35rem .75rem; font-size: .8125rem; }

@@ -76,7 +76,7 @@ function lgConcept(r) {
   var e = r.extra || {};
   if (r.kind === 'ingreso' || r.kind === 'egreso') return catName(r.categoryId);
   if (r.kind === 'transferencia') return accName(e.from) + ' → ' + accName(e.to) + (e.toCurrency && e.toCurrency !== r.currency ? ' (' + fmtMoney(e.toAmount, e.toCurrency) + ')' : '');
-  if (r.kind === 'compra' || r.kind === 'venta_inv') return r.concept + ' · ' + fmtNum(e.quantity) + ' × ' + fmtPrice(e.price, r.currency);
+  if (r.kind === 'compra' || r.kind === 'venta_inv') return r.concept + ' · ' + fmtNum(e.quantity) + (e.unit ? ' ' + unitShort(e.unit) : '') + ' × ' + fmtPrice(e.price, r.currency) + (e.unit ? '/' + unitShort(e.unit) : '');
   if (r.kind === 'intermediacion') return fmtMoney(r.amount, r.currency) + ' · ' + fmtNum(e.buyRate, 0, 4) + ' → ' + fmtNum(e.sellRate, 0, 4) + ' ' + e.payCurrency + ' · ganancia ' + fmtSigned(e.profit, r.currency);
   if (r.kind === 'cambio') return fmtMoney(e.received, e.inCurrency) + ' → ' + fmtMoney(e.delivered, e.outCurrency) + ' · ganancia ' + fmtSigned(e.profit, base());
   if ((r.kind === 'cobro_prestamo' || r.kind === 'pago_prestamo') && e.interest > 0) return 'incluye intereses ' + fmtMoney(e.interest, r.currency);

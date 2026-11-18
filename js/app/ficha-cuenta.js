@@ -51,8 +51,8 @@ function accountMoves(id) {
   });
   state.investments.forEach(function (o) {
     var buy = o.side === 'compra', total = C.operationTotal(o);
-    var qty = fmtNum(o.quantity) + ' ' + o.ticker;
-    if (o.accountId === id) push(o.date, (buy ? 'Compra ' : 'Venta ') + o.ticker, qty + ' × ' + fmtPrice(o.price, o.currency) + (o.custodyAccountId ? ' · guardado en ' + accName(o.custodyAccountId) : ''), buy ? -total : total);
+    var qty = opQtyText(o) + (C.quoteUnit(o.assetType, o.ticker) ? ' ' + o.ticker : '');
+    if (o.accountId === id) push(o.date, (buy ? 'Compra ' : 'Venta ') + o.ticker, opQtyText(o) + ' × ' + opPriceText(o) + (o.custodyAccountId ? ' · guardado en ' + accName(o.custodyAccountId) : ''), buy ? -total : total);
     else if (o.custodyAccountId === id) push(o.date, (buy ? 'Entra ' : 'Sale ') + o.ticker, 'Pagado desde ' + accName(o.accountId), null, (buy ? '+' : '−') + qty);
   });
   state.exchanges.forEach(function (x) {
@@ -109,7 +109,7 @@ function renderAccountView() {
     return '<li class="clickable" data-open-asset="' + esc(p.assetType + '|' + p.ticker) + '" tabindex="0" role="button">' + assetBadge(p) +
       '<div class="main"><div class="asset-row"><span class="title">' + esc(p.ticker) + ' <span class="tag">' + ASSET_LABELS[p.assetType] + '</span></span>' +
       '<span class="val">' + fmtMoney(r.valueBase, b) + '</span></div>' +
-      '<div class="asset-row"><span class="sub">' + fmtNum(p.quantity) + ' ' + esc(p.ticker) + (r.hasPrice && q ? ' · ' + fmtPrice(q.price, q.currency) : ' · sin precio') + '</span>' +
+      '<div class="asset-row"><span class="sub">' + esc(posQtyText(p, true)) + (r.hasPrice && q ? ' · ' + fmtPrice(q.price, q.currency) : ' · sin precio') + '</span>' +
       (r.hasPrice ? '<span class="pnl ' + trend(r.pnlBase) + '">' + fmtSigned(r.pnlBase, b) + ' · ' + fmtPct(r.pnlPct) + '</span>' : '') + '</div>' +
       '<div class="price-line">' + fmtNum(C.round(r.valueBase / tot * 100, 1), 1, 1) + ' % de la cuenta</div></div></li>';
   }).join('');

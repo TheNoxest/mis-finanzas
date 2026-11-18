@@ -763,7 +763,9 @@
             </label>
             <label>Ticker<input name="ticker" type="text" maxlength="20" placeholder="AAPL, BTC…" required list="ticker-list"></label>
             <label>Cantidad<input inputmode="decimal" autocomplete="off" name="quantity" type="text" required></label>
-            <label>Precio unitario<input inputmode="decimal" autocomplete="off" name="price" type="text" required></label>
+            <label class="hidden" id="inv-unit-wrap">Unidad<select name="unit"></select></label>
+            <label><span id="inv-price-label">Precio unitario</span><input inputmode="decimal" autocomplete="off" name="price" type="text" required></label>
+            <label class="hidden" id="inv-total-wrap"><span id="inv-total-label">Total pagado</span><input inputmode="decimal" autocomplete="off" name="totalPaid" type="text" placeholder="Opcional"></label>
             <label>Moneda<select name="currency"></select></label>
             <label>Comisión<input inputmode="decimal" autocomplete="off" name="fee" type="text" placeholder="0"></label>
             <label>Fecha<input name="date" type="date" required></label>
@@ -772,6 +774,7 @@
             <label class="span2">Nota<input name="note" type="text" maxlength="140" placeholder="Opcional"></label>
           </div>
           <datalist id="ticker-list"></datalist>
+          <div class="inv-live hidden" id="inv-live"></div>
           <p class="hint" id="inv-preview"></p>
           <div class="actions">
             <button type="button" class="danger hidden" data-action="delete-inv">Eliminar</button>
